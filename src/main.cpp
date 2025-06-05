@@ -1,4 +1,5 @@
 #include "core/config.hpp"
+#include "core/tokenizer.hpp"
 #include <iostream>
 #include <nlohmann/json.hpp>
 
@@ -16,6 +17,9 @@ int main(int argc, char *argv[]) {
 
   tinyllm::Config config;
   config.load_tensors(path);
+
+  tinyllm::Tokenizer tokenizer;
+  tokenizer.load(path);
 
   return 0;
 }
