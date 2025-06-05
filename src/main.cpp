@@ -2,6 +2,7 @@
 #include "core/tokenizer.hpp"
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include "utils/debug.hpp"
 
 namespace fs = std::filesystem;
 
@@ -16,10 +17,16 @@ int main(int argc, char *argv[]) {
   std::cout << "Loading tensors from: " << path << std::endl;
 
   tinyllm::Config config;
-  config.load_tensors(path);
+  // config.load_tensors(path);
 
   tinyllm::Tokenizer tokenizer;
   tokenizer.load(path);
+
+  const std::string text = "Who is Linus?";
+  std::cout << "Encoding text: " << text << std::endl;
+  const auto tokens = tokenizer.encode(text);
+  std::cout << "Encoded tokens: " << tokens << std::endl;
+  std::cout << "Decoded text: " << tokenizer._debug_decode(tokens) << std::endl;
 
   return 0;
 }

@@ -1,4 +1,5 @@
 #include "tokenizer.hpp"
+#include "../utils/utf8.hpp"
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -10,7 +11,6 @@ TokenizerTrieNode::TokenizerTrieNode(std::int32_t id) : token_id(id) {}
 void TokenizerTrieNode::insert(const std::string_view word, std::int32_t token_id) {
   TokenizerTrieNode *p = this;
   for (const char c : word) {
-    std::cout << "Inserting character: " << int(c) << std::endl;
     if (p->children.empty()) {
       p->children.resize(256); // Assuming ASCII characters
     }
@@ -43,19 +43,81 @@ void Tokenizer::load(const std::filesystem::path &path) {
   tokenizer_file >> tokenizer_json;
 
   const auto &vocab_json = tokenizer_json["model"]["vocab"];
+  vocab.resize(vocab_json.size() + 100);
 
   // Load vocabulary and other settings from the JSON
   for (const auto &[key, value] : vocab_json.items()) {
     auto token_id = value.get<std::int32_t>();
-    vocab.push_back(key);
-    std::cout << "Inserting token: " << key << " with ID: " << token_id << std::endl;
-    root.insert(key, token_id);
+    const auto processed_key = replace_unicode_space(key);
+    vocab[token_id] = processed_key;
+    root.insert(processed_key, token_id);
+  }
+
+  if (tokenizer_config_json["add_bos_token"].get<bool>()) {
+    const auto &bos_token = tokenizer_config_json["bos_token"].get<std::string>();
+    if (vocab.size() > 0 && !vocab.empty()) {
+      bos_token_id = std::distance(vocab.begin(), std::find(vocab.begin(), vocab.end(), bos_token));
+    } else {
+      throw std::runtime_error("BOS token not found in vocabulary");
+    }
+  }
+
+  if (tokenizer_config_json["add_eos_token"].get<bool>()) {
+    const auto &eos_token = tokenizer_config_json["eos_token"].get<std::string>();
+    if (vocab.size() > 0 && !vocab.empty()) {
+      eos_token_id = std::distance(vocab.begin(), std::find(vocab.begin(), vocab.end(), eos_token));
+    } else {
+      throw std::runtime_error("EOS token not found in vocabulary");
+    }
   }
 }
 
 std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
-  // Tokenization logic goes here
-  return {};
+  std::vector<std::int32_t> tokens;
+  if (bos_token_id >= 0) {
+    tokens.push_back(bos_token_id);
+  }
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    TokenizerTrieNode *p = &root, *valid_p = nullptr;
+    std::size_t j = i, valid_j = i;
+    while (j < text.size()) {
+      const auto uc = static_cast<std::uint8_t>(text[j]);
+      if (p->children.empty()) {
+        break;
+      } else {
+        p = &p->children[uc];
+        j += 1;
+        if (p->token_id >= 0) {
+          valid_p = p;
+          valid_j = j;
+        }
+      }
+    }
+    if (valid_p) {
+      tokens.push_back(valid_p->token_id);
+      i = valid_j - 1;
+    } else {
+      tokens.push_back(-1);
+    }
+  }
+  if (eos_token_id >= 0) {
+    tokens.push_back(eos_token_id);
+  }
+  return tokens;
+}
+
+std::string Tokenizer::_debug_decode(const std::vector<std::int32_t> &tokens) {
+  std::string decoded = "[";
+  for (const auto token_id : tokens) {
+    if (token_id < 0 || token_id >= static_cast<int>(vocab.size())) {
+      decoded += "<UNK>"; // Unknown token
+    } else {
+      decoded += "`" + vocab[token_id] + "`";
+    }
+    decoded += ", ";
+  }
+  decoded.push_back(']');
+  return decoded;
 }
 
 } // namespace tinyllm

@@ -19,12 +19,16 @@ struct TokenizerTrieNode {
 struct Tokenizer {
   std::vector<std::string> vocab;
   TokenizerTrieNode root;
+  std::int32_t bos_token_id = -1;
+  std::int32_t eos_token_id = -1;
 
   Tokenizer();
 
   void load(const std::filesystem::path &path);
 
   std::vector<std::int32_t> encode(const std::string &text);
+
+  std::string _debug_decode(const std::vector<std::int32_t> &tokens);
 };
 
 } // namespace tinyllm
