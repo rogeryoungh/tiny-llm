@@ -1,7 +1,7 @@
 #pragma once
 
+#include "config.hpp"
 #include <cstdint>
-#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -17,14 +17,15 @@ struct TokenizerTrieNode {
 };
 
 struct Tokenizer {
+  Config &config;
   std::vector<std::string> vocab;
   TokenizerTrieNode root;
   std::int32_t bos_token_id = -1;
   std::int32_t eos_token_id = -1;
 
-  Tokenizer();
+  Tokenizer(Config &cfg);
 
-  void load(const std::filesystem::path &path);
+  void load_trie();
 
   std::vector<std::int32_t> encode(const std::string &text);
 

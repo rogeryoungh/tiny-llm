@@ -1,49 +1,46 @@
 #include "config.hpp"
-#include "tensor.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace fs = std::filesystem;
 
 namespace tinyllm {
 
-void Config::load_tensors(const fs::path path) {
-  // Load tensor configurations from a file
-  const fs::path config_file = path / "model.safetensors.index.json";
+Config::Config(const fs::path &path) : model_path(path) {
+  // Load the model configuration from a JSON file
+  const fs::path config_file = path / "config.json";
   std::ifstream file(config_file);
-  if (!file) {
-    throw std::runtime_error("Failed to open config file");
+  if (!file.is_open()) {
+    throw std::runtime_error("Failed to open config file: " + config_file.string());
   }
 
   nlohmann::json config_json;
   file >> config_json;
 
-  std::cout << config_json << std::endl;
+  model_type = config_json.at("model_type").get<std::string>();
+  hidden_act = config_json.at("hidden_act").get<std::string>();
+  hidden_size = config_json.at("hidden_size").get<std::uint32_t>();
+  intermediate_size = config_json.at("intermediate_size").get<std::uint32_t>();
+  max_position_embeddings = config_json.at("max_position_embeddings").get<std::uint32_t>();
+  num_key_value_heads = config_json.at("num_key_value_heads").get<std::uint32_t>();
+  num_hidden_layers = config_json.at("num_hidden_layers").get<std::uint32_t>();
+  num_attention_heads = config_json.at("num_attention_heads").get<std::uint32_t>();
 
-  std::map<std::string, SafeTensorsData> tensors;
-
-  for (const auto &[tensor_name, tensor_file] : config_json.at("weight_map").items()) {
-    std::cout << "Loading tensor: " << tensor_name << " from " << tensor_file << std::endl;
-    const std::string tensor_file_name = tensor_file.get<std::string>();
-
-    if (tensor_file_name == "__metadata__") {
-      continue;
-    }
-
-    if (!tensors.contains(tensor_file_name)) {
-      tensors.emplace(tensor_file_name, SafeTensorsData());
-      tensors[tensor_file_name].load_metadata(path / tensor_file_name);
-    }
-
-    auto &safetensors_info = tensors.at(tensor_file_name);
-    std::cout << tensor_name << std::endl;
-    const auto tensor_info = safetensors_info.data.at(tensor_name);
-
-    tensor_manager.load_tensor(tensor_name, safetensors_info.file, tensor_info);
+  if (config_json.contains("bos_token_id")) {
+    bos_token_id = config_json.at("bos_token_id").get<std::uint32_t>();
+  } else {
+    bos_token_id = static_cast<std::uint32_t>(-1);
   }
+
+  if (config_json.contains("eos_token_id")) {
+    eos_token_id = config_json.at("eos_token_id").get<std::uint32_t>();
+  } else {
+    eos_token_id = static_cast<std::uint32_t>(-1);
+  }
+
+  vocab_size = config_json.at("vocab_size").get<std::uint32_t>();
 }
 
 } // namespace tinyllm

@@ -3,12 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
-#include <map>
 #include <span>
 #include <string>
-#include <vector>
 
 namespace tinyllm {
 
@@ -24,32 +20,21 @@ struct Tensor {
   std::array<std::int32_t, 4> shape{};
   DataType dtype{};
   std::span<std::byte> data;
+
+  template <typename T> T *as() { return reinterpret_cast<T *>(data.data()); }
+
+  template <typename T> const T *as() const { return reinterpret_cast<const T *>(data.data()); }
+
+  template <typename T> const T *const_as() const { return reinterpret_cast<const T *>(data.data()); }
 };
 
-struct SafeTensorsData {
-  struct Metadata {
-    std::string dtype;
-    std::vector<std::int32_t> data_offsets, shape;
-  };
+struct TensorAlloc {
+  std::size_t total_allocated = 0;
+  std::size_t allocated_size = 0;
 
-  std::map<std::string, Metadata> data;
-  std::ifstream file;
+  std::span<std::byte> alloc(std::size_t size);
 
-  SafeTensorsData();
-
-  void load_metadata(const std::filesystem::path &config_path_);
-};
-
-struct TensorManager {
-  std::map<std::string, Tensor> tensors;
-
-  ~TensorManager();
-
-  void load_tensor(const std::string &name, std::ifstream &is, SafeTensorsData::Metadata metadata);
-
-  Tensor get_tensor(const std::string &name);
-
-  bool has_tensor(const std::string &name);
+  void dealloc(std::span<std::byte> span);
 };
 
 } // namespace tinyllm

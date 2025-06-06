@@ -4,7 +4,7 @@
 #include <ostream>
 #include <vector>
 
-std::ostream &operator<<(std::ostream &os, const std::vector<std::int32_t> &v) {
+inline std::ostream &operator<<(std::ostream &os, const std::vector<std::int32_t> &v) {
   os << "[";
   if (v.empty()) {
     os << "]";
@@ -15,5 +15,6 @@ std::ostream &operator<<(std::ostream &os, const std::vector<std::int32_t> &v) {
     os << ", " << v[i];
   }
   os << "]";
+
   return os;
 }

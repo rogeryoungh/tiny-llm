@@ -8,3 +8,5 @@ target("tiny-llm")
     add_packages("nlohmann_json")
 	set_languages("c++23")
 	add_files("src/**.cpp")
+	-- set_policy("build.sanitizer.address", true)
+

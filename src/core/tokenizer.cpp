@@ -1,7 +1,6 @@
 #include "tokenizer.hpp"
 #include "../utils/utf8.hpp"
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace tinyllm {
@@ -20,11 +19,9 @@ void TokenizerTrieNode::insert(const std::string_view word, std::int32_t token_i
   p->token_id = token_id;
 }
 
-Tokenizer::Tokenizer() = default;
-
-void Tokenizer::load(const std::filesystem::path &path) {
+Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
   nlohmann::json tokenizer_config_json;
-  std::ifstream file(path / "tokenizer_config.json");
+  std::ifstream file(config.model_path / "tokenizer_config.json");
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open tokenizer config file");
   }
@@ -35,8 +32,18 @@ void Tokenizer::load(const std::filesystem::path &path) {
                              tokenizer_config_json["tokenizer_class"].get<std::string>());
   }
 
+  if (tokenizer_config_json["add_bos_token"].get<bool>()) {
+    bos_token_id = config.bos_token_id;
+  }
+
+  if (tokenizer_config_json["add_eos_token"].get<bool>()) {
+    eos_token_id = config.eos_token_id;
+  }
+}
+
+void Tokenizer::load_trie() {
   nlohmann::json tokenizer_json;
-  std::ifstream tokenizer_file(path / "tokenizer.json");
+  std::ifstream tokenizer_file(config.model_path / "tokenizer.json");
   if (!tokenizer_file.is_open()) {
     throw std::runtime_error("Failed to open tokenizer file");
   }
@@ -51,24 +58,6 @@ void Tokenizer::load(const std::filesystem::path &path) {
     const auto processed_key = replace_unicode_space(key);
     vocab[token_id] = processed_key;
     root.insert(processed_key, token_id);
-  }
-
-  if (tokenizer_config_json["add_bos_token"].get<bool>()) {
-    const auto &bos_token = tokenizer_config_json["bos_token"].get<std::string>();
-    if (vocab.size() > 0 && !vocab.empty()) {
-      bos_token_id = std::distance(vocab.begin(), std::find(vocab.begin(), vocab.end(), bos_token));
-    } else {
-      throw std::runtime_error("BOS token not found in vocabulary");
-    }
-  }
-
-  if (tokenizer_config_json["add_eos_token"].get<bool>()) {
-    const auto &eos_token = tokenizer_config_json["eos_token"].get<std::string>();
-    if (vocab.size() > 0 && !vocab.empty()) {
-      eos_token_id = std::distance(vocab.begin(), std::find(vocab.begin(), vocab.end(), eos_token));
-    } else {
-      throw std::runtime_error("EOS token not found in vocabulary");
-    }
   }
 }
 
