@@ -3,6 +3,7 @@
 #include "core/tokenizer.hpp"
 #include "infer/inference_ctx.hpp"
 #include "utils/debug.hpp"
+#include "utils/stopwatch.hpp"
 #include "utils/utf8.hpp"
 
 #include <iostream>
@@ -21,13 +22,15 @@ int main(int argc, char *argv[]) {
 
   tinyllm::Config config(path);
 
+  tinyllm::Stopwatch tokenizer_load_timer;
   tinyllm::Tokenizer tokenizer(config);
   tokenizer.load_trie();
-  std::cout << "[DEBUG] Tokenizer loaded." << std::endl;
+  std::cout << std::format("[DEBUG] Tokenizer loaded in {:3f} ms.", tokenizer_load_timer.elapsed_ms()) << std::endl;
 
+  tinyllm::Stopwatch model_load_timer;
   tinyllm::Model model(config);
   model.load_weights();
-  std::cout << "[DEBUG] Model weights loaded." << std::endl;
+  std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
   std::cout << ">>> " << std::flush;
 
@@ -46,17 +49,24 @@ int main(int argc, char *argv[]) {
   // ctx.forward(model, 0, 0);
   std::cout << "[DEBUG] Forwarding prompt ..." << std::endl;
 
+  tinyllm::Stopwatch prefill_timer;
   for (std::int32_t i = 0; i < tokens.size(); ++i) {
     ctx.forward(model, tokens[i], i);
     std::uint32_t token = ctx.argmax();
     std::string decoded_token = tokenizer.vocab[token];
   }
+  std::cout << std::format("[DEBUG] Prefill completed in {:3f} ms.", prefill_timer.elapsed_ms()) << std::endl;
+  std::cout << std::format("[DEBUG] Prefill throughput: {:3f} tokens/s",
+                           tokens.size() / prefill_timer.elapsed_seconds())
+            << std::endl;
+  tinyllm::Stopwatch answer_timer;
 
   std::string answer_buffer;
+  std::size_t generate_tokens = 0;
   for (std::int32_t i = 0; i < 4096; ++i) {
     std::uint32_t token = ctx.argmax();
+    generate_tokens += 1;
     if (token == config.eos_token_id) {
-      std::cout << "[DEBUG] Reached EOS token, stopping." << std::endl;
       break;
     }
     std::string decoded_token = tokenizer.vocab[token];
@@ -70,6 +80,12 @@ int main(int argc, char *argv[]) {
   if (!answer_buffer.empty()) {
     std::cout << answer_buffer << std::flush;
   }
+
+  std::cout << std::endl;
+  std::cout << std::format("[DEBUG] Generated {} tokens.", generate_tokens) << std::endl;
+  std::cout << std::format("[DEBUG] Generate throughput: {:3f} tokens/s",
+                           generate_tokens / answer_timer.elapsed_seconds())
+            << std::endl;
 
   return 0;
 }
