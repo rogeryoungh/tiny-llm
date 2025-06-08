@@ -45,6 +45,8 @@ void matrix_mul_fp32(float *out, const float *a, const float *b, std::size_t m, 
   }
 }
 
+#ifndef TINYLLM_USE_OPENBLAS
+
 void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0.0f;
@@ -56,6 +58,17 @@ void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t
     out[i] = sum;
   }
 }
+
+#else
+
+#include <cblas.h>
+
+void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
+  // Using BLAS for matrix-vector multiplication
+  cblas_sgemv(CblasRowMajor, CblasNoTrans, n, m, 1.0f, b, m, a, 1, 0.0f, out, 1);
+}
+
+#endif
 
 void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_t pos, float theta,
                        std::size_t rotary_dim) {
