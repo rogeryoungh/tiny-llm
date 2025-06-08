@@ -22,6 +22,8 @@ struct InferenceCtx {
 
   void forward(const Model &model, std::int32_t token, std::int32_t pos);
 
+  void forward_prefill(const Model &model, std::int32_t token, std::int32_t pos);
+
   std::uint32_t argmax() const;
 
 protected:

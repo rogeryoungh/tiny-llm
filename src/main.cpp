@@ -51,9 +51,11 @@ int main(int argc, char *argv[]) {
 
   tinyllm::Stopwatch prefill_timer;
   for (std::int32_t i = 0; i < tokens.size(); ++i) {
-    ctx.forward(model, tokens[i], i);
-    std::uint32_t token = ctx.argmax();
-    std::string decoded_token = tokenizer.vocab[token];
+    if (i + 1 < tokens.size()) {
+      ctx.forward_prefill(model, tokens[i], i);
+    } else {
+      ctx.forward(model, tokens[i], i);
+    }
   }
   std::cout << std::format("[DEBUG] Prefill completed in {:3f} ms.", prefill_timer.elapsed_ms()) << std::endl;
   std::cout << std::format("[DEBUG] Prefill throughput: {:3f} tokens/s",

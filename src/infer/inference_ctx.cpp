@@ -123,9 +123,7 @@ void InferenceCtx::forward(const Model &model, std::int32_t token, std::int32_t 
   int kv_len = pos >= kv_size ? kv_size : pos + 1;
 
   // 2. Forward through each block
-  std::int32_t cnt = 0;
   for (std::int32_t i = 0; i < config.num_hidden_layers; ++i) {
-    cnt++;
     const Block &block = model.weight.blocks[i];
     forward_block(block, k_cache[i], v_cache[i], pos, kv_sink, kv_pos, kv_len);
   }
@@ -136,6 +134,24 @@ void InferenceCtx::forward(const Model &model, std::int32_t token, std::int32_t 
   // 4. Compute logits
   matrix_mul_vec_fp32(logits.as<float>(), x.as<float>(), model.weight.lm_head.as<float>(), config.hidden_size,
                       config.vocab_size);
+}
+
+void InferenceCtx::forward_prefill(const Model &model, std::int32_t token, std::int32_t pos) {
+  // 1. Embed the token
+  _embeding(model, token);
+
+  // When decoding past the context length, keep the first few tokens in the KV cache
+  // untouched as "attention sinks" while replacing the rest in ring order.
+  // See StreamingLLM (https://arxiv.org/pdf/2309.17453) for more.
+  int kv_sink = pos >= kv_size ? 2 : 0;
+  int kv_pos = kv_sink + (pos - kv_sink) % (kv_size - kv_sink);
+  int kv_len = pos >= kv_size ? kv_size : pos + 1;
+
+  // 2. Forward through each block
+  for (std::int32_t i = 0; i < config.num_hidden_layers; ++i) {
+    const Block &block = model.weight.blocks[i];
+    forward_block(block, k_cache[i], v_cache[i], pos, kv_sink, kv_pos, kv_len);
+  }
 }
 
 std::uint32_t InferenceCtx::argmax() const {
