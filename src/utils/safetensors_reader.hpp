@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../core/tensor.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -25,7 +27,7 @@ struct SafeTensorsReader {
 
   std::vector<std::string> get_tensor_names() const;
 
-  void load_tensor(const std::string &name, std::span<std::byte> buffer);
+  void load_tensor(const std::string &name, std::span<std::byte> buffer, DataType type);
 
 protected:
   void _load_metadata(const std::string &file_name);

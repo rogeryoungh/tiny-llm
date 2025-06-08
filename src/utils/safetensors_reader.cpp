@@ -1,4 +1,5 @@
 #include "safetensors_reader.hpp"
+#include "precision_convert.hpp"
 
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -15,6 +16,8 @@ void SafeTensorsReader::_load_metadata(const std::string &file_name) {
   is.read(v.data(), v.size());
   const auto metadata = nlohmann::json::parse(v);
   for (const auto &[name, tensor_info] : metadata.items()) {
+    if (name == "__metadata__")
+      continue;
     auto dtype = tensor_info.at("dtype").get<std::string>();
     auto data_offsets = tensor_info.at("data_offsets").get<std::vector<std::int64_t>>();
     auto shape = tensor_info.at("shape").get<std::vector<std::int64_t>>();
@@ -37,8 +40,6 @@ SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &path) : config
 
   for (const auto &[tensor_name, tensor_file] : index_json.at("weight_map").items()) {
     const auto file_name = tensor_file.get<std::string>();
-    if (file_name == "__metadata__")
-      continue;
     if (files.contains(file_name))
       continue;
     _load_metadata(file_name);
@@ -59,7 +60,7 @@ SafeTensorsReader::Metadata SafeTensorsReader::get_tensor_meta(const std::string
   return metadata;
 }
 
-void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte> buffer) {
+void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte> span, DataType type) {
   const auto &metadata = data.at(name);
   auto &file = files.at(file_names.at(name));
 
@@ -70,7 +71,19 @@ void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte
   if (!file) {
     throw std::runtime_error("Failed to seek to tensor data for " + name);
   }
-  file.read(reinterpret_cast<char *>(buffer.data()), end - begin);
+  auto meta_dtype = string_to_dtype(metadata.dtype);
+  if (type == meta_dtype) {
+    file.read(reinterpret_cast<char *>(span.data()), end - begin);
+  } else {
+    if (type == DataType::F32 && meta_dtype == DataType::BF16) {
+      file.read(reinterpret_cast<char *>(span.data()), end - begin);
+      assert(span.size() == (end - begin) * 2);
+      convert_bf16_to_fp32_inplace(span);
+    } else {
+      throw std::runtime_error("Unsupported data type conversion from " + metadata.dtype + " to " +
+                               dtype_to_string(type));
+    }
+  }
 }
 
 } // namespace tinyllm

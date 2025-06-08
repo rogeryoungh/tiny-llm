@@ -21,7 +21,7 @@ void Model::load_weights() {
       std::copy(meta.shape.rbegin(), meta.shape.rend(), shape.begin());
     }
     auto tensor = alloc.alloc_fp32(shape);
-    reader.load_tensor(name, tensor.data);
+    reader.load_tensor(name, tensor.data, DataType::F32);
     return tensor;
   };
 
