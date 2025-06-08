@@ -52,12 +52,38 @@ void Tokenizer::load_trie() {
   const auto &vocab_json = tokenizer_json["model"]["vocab"];
   vocab.resize(vocab_json.size() + 100);
 
+  bool byte_fallback = tokenizer_json["model"].value("byte_fallback", false);
+
   // Load vocabulary and other settings from the JSON
   for (const auto &[key, value] : vocab_json.items()) {
     auto token_id = value.get<std::int32_t>();
-    const auto processed_key = replace_unicode_space(key);
-    vocab[token_id] = processed_key;
-    root.insert(processed_key, token_id);
+    std::string key_decoded;
+    if (byte_fallback && key.front() == '<' && key.back() == '>') {
+      auto get_hex_value = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+          return c - '0';
+        if (c >= 'a' && c <= 'f')
+          return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+          return c - 'A' + 10;
+        return -1;
+      };
+      std::string s;
+      for (std::size_t i = 3; i + 2 < key.size(); i += 2) {
+        int c0 = get_hex_value(key[i]);
+        int c1 = get_hex_value(key[i + 1]);
+        if (c0 < 0 || c1 < 0) {
+          key_decoded.clear();
+          break;
+        }
+        key_decoded += (c0 << 4) | c1;
+      }
+    }
+    if (key_decoded.empty()) {
+      key_decoded = replace_unicode_space(key);
+    }
+    vocab[token_id] = key_decoded;
+    root.insert(key_decoded, token_id);
   }
 }
 

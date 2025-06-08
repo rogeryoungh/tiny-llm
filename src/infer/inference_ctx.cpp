@@ -1,6 +1,5 @@
 #include "inference_ctx.hpp"
 #include "infer.hpp"
-#include <iostream>
 
 namespace tinyllm {
 

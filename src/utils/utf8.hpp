@@ -6,7 +6,7 @@
 
 namespace tinyllm {
 
-std::int32_t utf8_to_codepoint(const std::string_view input);
+std::pair<std::size_t, std::uint32_t> utf8_to_codepoint(const std::string_view input);
 
 std::vector<uint32_t> utf8_to_codepoints(const std::string &input);
 
