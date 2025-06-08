@@ -17,6 +17,7 @@ struct ModelWeights {
   std::vector<Block> blocks;
   Tensor embed;
   Tensor norm;
+  Tensor lm_head;
 };
 
 struct Model {
@@ -30,6 +31,8 @@ struct Model {
   ~Model();
 
   void load_weights();
+
+  void _permute_qk(Tensor &q, std::size_t n_heads, std::size_t model_dim, std::size_t head_dim);
 };
 
 } // namespace tinyllm

@@ -21,26 +21,23 @@ Config::Config(const fs::path &path) : model_path(path) {
 
   model_type = config_json.at("model_type").get<std::string>();
   hidden_act = config_json.at("hidden_act").get<std::string>();
-  hidden_size = config_json.at("hidden_size").get<std::uint32_t>();
-  intermediate_size = config_json.at("intermediate_size").get<std::uint32_t>();
-  max_position_embeddings = config_json.at("max_position_embeddings").get<std::uint32_t>();
-  num_key_value_heads = config_json.at("num_key_value_heads").get<std::uint32_t>();
-  num_hidden_layers = config_json.at("num_hidden_layers").get<std::uint32_t>();
-  num_attention_heads = config_json.at("num_attention_heads").get<std::uint32_t>();
+  hidden_size = config_json.value("hidden_size", -1);
+  intermediate_size = config_json.value("intermediate_size", -1);
+  num_key_value_heads = config_json.value("num_key_value_heads", -1);
+  num_hidden_layers = config_json.value("num_hidden_layers", -1);
+  num_attention_heads = config_json.value("num_attention_heads", -1);
+  tie_word_embeddings = config_json.value("tie_word_embeddings", false);
+  rope_theta = config_json.value("rope_theta", 1000000.0f);
 
-  if (config_json.contains("bos_token_id")) {
-    bos_token_id = config_json.at("bos_token_id").get<std::uint32_t>();
-  } else {
-    bos_token_id = static_cast<std::uint32_t>(-1);
+  bos_token_id = config_json.value("bos_token_id", -1);
+  eos_token_id = config_json.value("eos_token_id", -1);
+
+  max_position_embeddings = config_json.value("max_position_embeddings", 16384);
+  if (max_position_embeddings <= 0 || max_position_embeddings > 1e8) {
+    max_position_embeddings = 1 << 24;
   }
 
-  if (config_json.contains("eos_token_id")) {
-    eos_token_id = config_json.at("eos_token_id").get<std::uint32_t>();
-  } else {
-    eos_token_id = static_cast<std::uint32_t>(-1);
-  }
-
-  vocab_size = config_json.at("vocab_size").get<std::uint32_t>();
+  vocab_size = config_json.value("vocab_size", -1);
 }
 
 } // namespace tinyllm

@@ -1,25 +1,35 @@
 #include "safetensors_reader.hpp"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace tinyllm {
 
-void SafeTensorsReader::_load_metadata(std::ifstream &is) {
+void SafeTensorsReader::_load_metadata(const std::string &file_name) {
   std::uint64_t metadata_size = 0;
+  std::ifstream is(config_path / file_name, std::ios::binary);
+  std::cout << "Loading metadata from: " << (config_path / file_name).string() << ", size "
+            << std::filesystem::file_size(config_path / file_name) << " bytes" << std::endl;
   is.read(reinterpret_cast<char *>(&metadata_size), sizeof(metadata_size));
   std::vector<char> v(metadata_size);
   is.read(v.data(), v.size());
   const auto metadata = nlohmann::json::parse(v);
   for (const auto &[name, tensor_info] : metadata.items()) {
     auto dtype = tensor_info.at("dtype").get<std::string>();
-    auto data_offsets = tensor_info.at("data_offsets").get<std::vector<std::int32_t>>();
-    auto shape = tensor_info.at("shape").get<std::vector<std::int32_t>>();
+    auto data_offsets = tensor_info.at("data_offsets").get<std::vector<std::int64_t>>();
+    auto shape = tensor_info.at("shape").get<std::vector<std::int64_t>>();
 
+    for (auto &offset : data_offsets) {
+      offset += metadata_size + 8;
+    }
+
+    file_names[name] = file_name;
     data[name] = Metadata{dtype, std::move(data_offsets), std::move(shape)};
   }
+  files[file_name] = std::move(is);
 }
 
-SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &config_path) {
+SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &path) : config_path(path) {
   std::ifstream index_file(config_path / "model.safetensors.index.json");
 
   nlohmann::json index_json;
@@ -31,9 +41,7 @@ SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &config_path) {
       continue;
     if (files.contains(file_name))
       continue;
-    std::ifstream is(config_path / file_name, std::ios::binary);
-    _load_metadata(is);
-    files[tensor_name] = std::move(is);
+    _load_metadata(file_name);
   }
 }
 
@@ -53,12 +61,15 @@ SafeTensorsReader::Metadata SafeTensorsReader::get_tensor_meta(const std::string
 
 void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte> buffer) {
   const auto &metadata = data.at(name);
-  auto &file = files.at(name);
+  auto &file = files.at(file_names.at(name));
 
   std::size_t begin = metadata.data_offsets[0];
   std::size_t end = metadata.data_offsets[1];
 
   file.seekg(begin);
+  if (!file) {
+    throw std::runtime_error("Failed to seek to tensor data for " + name);
+  }
   file.read(reinterpret_cast<char *>(buffer.data()), end - begin);
 }
 

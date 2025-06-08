@@ -1,10 +1,9 @@
 #include "tensor.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
-
-#include <iostream>
 
 namespace tinyllm {
 
@@ -48,7 +47,6 @@ DataType string_to_dtype(const std::string &dtype_str) {
 std::span<std::byte> TensorAlloc::alloc(std::size_t size) {
   allocated_size += size;
   total_allocated += size;
-  std::cout << "Allocating " << (size >> 20) << " MB, total allocated: " << (total_allocated >> 20) << " MB\n";
   std::span<std::byte> span(new std::byte[size], size);
   return span;
 }
@@ -56,6 +54,19 @@ std::span<std::byte> TensorAlloc::alloc(std::size_t size) {
 void TensorAlloc::dealloc(std::span<std::byte> span) {
   allocated_size -= span.size();
   delete[] span.data();
+}
+
+Tensor TensorAlloc::alloc_fp32(std::array<std::int32_t, 4> shape) {
+  std::size_t size = dtype_size(DataType::F32);
+  for (const auto &dim : shape) {
+    size *= dim;
+  }
+  auto data = alloc(size);
+  return Tensor{shape, DataType::F32, data};
+}
+
+Tensor TensorAlloc::alloc_fp32(std::int32_t s0, std::int32_t s1, std::int32_t s2, std::int32_t s3) {
+  return alloc_fp32({s0, s1, s2, s3});
 }
 
 } // namespace tinyllm

@@ -11,13 +11,15 @@ namespace tinyllm {
 struct SafeTensorsReader {
   struct Metadata {
     std::string dtype;
-    std::vector<std::int32_t> data_offsets, shape;
+    std::vector<std::int64_t> data_offsets, shape;
   };
 
+  std::filesystem::path config_path;
   std::map<std::string, std::ifstream> files;
   std::map<std::string, Metadata> data;
+  std::map<std::string, std::string> file_names;
 
-  SafeTensorsReader(const std::filesystem::path &config_path);
+  SafeTensorsReader(const std::filesystem::path &path);
 
   Metadata get_tensor_meta(const std::string &name) const;
 
@@ -26,7 +28,7 @@ struct SafeTensorsReader {
   void load_tensor(const std::string &name, std::span<std::byte> buffer);
 
 protected:
-  void _load_metadata(std::ifstream &is);
+  void _load_metadata(const std::string &file_name);
 };
 
 } // namespace tinyllm

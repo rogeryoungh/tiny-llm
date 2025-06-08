@@ -34,6 +34,10 @@ struct TensorAlloc {
 
   std::span<std::byte> alloc(std::size_t size);
 
+  Tensor alloc_fp32(std::array<std::int32_t, 4> shape);
+
+  Tensor alloc_fp32(std::int32_t s0, std::int32_t s1 = 1, std::int32_t s2 = 1, std::int32_t s3 = 1);
+
   void dealloc(std::span<std::byte> span);
 };
 
