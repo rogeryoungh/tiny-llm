@@ -3,7 +3,6 @@ add_rules("mode.release", "mode.debug")
 
 option("use_blas")
 	set_showmenu(true)
-	set_default(true)
     set_description("Enable BLAS support")
 option_end()
 
