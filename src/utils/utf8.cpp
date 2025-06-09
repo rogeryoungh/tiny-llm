@@ -82,4 +82,35 @@ std::string replace_unicode_space(const std::string &input) {
   return output;
 }
 
+std::string gpt2_unicode_to_bytes(const std::string &input) {
+  std::string output;
+  output.reserve(input.size());
+  std::size_t i = 0;
+  while (i < input.size()) {
+    std::uint8_t b = static_cast<std::uint8_t>(input[i]);
+    if (0x20 <= b && b <= 0x7e) {
+      output += input[i];
+      i += 1;
+    } else if (b == 0xc4) {
+      std::uint8_t next = input[i + 1];
+      output += next > 0xa0 ? next - 0x22 : next - 0x80;
+      i += 2;
+    } else if (b == 0xc5) {
+      std::uint8_t next = input[i + 1];
+      output += next > 0x82 ? next + 0x2a : next + 0x1e;
+      i += 2;
+    } else if (b == 0xc2) {
+      output += input[i + 1];
+      i += 2;
+    } else if (b == 0xc3) {
+      output += input[i + 1] + 0x40;
+      i += 2;
+    } else {
+      output += input[i];
+      i += 1;
+    }
+  }
+  return output;
+}
+
 } // namespace tinyllm

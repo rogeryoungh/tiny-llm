@@ -27,38 +27,19 @@ Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
   }
   file >> tokenizer_config_json;
 
-  if (tokenizer_config_json["tokenizer_class"] != "LlamaTokenizer") {
-    throw std::runtime_error("Unsupported tokenizer class: " +
-                             tokenizer_config_json["tokenizer_class"].get<std::string>());
-  }
-
-  if (tokenizer_config_json["add_bos_token"].get<bool>()) {
+  if (tokenizer_config_json.value("add_bos_token", false)) {
     bos_token_id = config.bos_token_id;
   }
 
-  if (tokenizer_config_json["add_eos_token"].get<bool>()) {
+  if (tokenizer_config_json.value("add_eos_token", false)) {
     eos_token_id = config.eos_token_id;
   }
 }
 
-void Tokenizer::load_trie() {
-  nlohmann::json tokenizer_json;
-  std::ifstream tokenizer_file(config.model_path / "tokenizer.json");
-  if (!tokenizer_file.is_open()) {
-    throw std::runtime_error("Failed to open tokenizer file");
-  }
-  tokenizer_file >> tokenizer_json;
-
-  const auto &vocab_json = tokenizer_json["model"]["vocab"];
-  vocab.resize(vocab_json.size() + 100);
-
-  bool byte_fallback = tokenizer_json["model"].value("byte_fallback", false);
-
-  // Load vocabulary and other settings from the JSON
-  for (const auto &[key, value] : vocab_json.items()) {
-    auto token_id = value.get<std::int32_t>();
-    std::string key_decoded;
-    if (byte_fallback && key.front() == '<' && key.back() == '>') {
+void Tokenizer::_add_token(const std::string &key, std::int32_t token_id) {
+  std::string key_decoded;
+  if (byte_fallback) {
+    if (key.front() == '<' && key.back() == '>') {
       auto get_hex_value = [](char c) -> int {
         if (c >= '0' && c <= '9')
           return c - '0';
@@ -79,11 +60,43 @@ void Tokenizer::load_trie() {
         key_decoded += (c0 << 4) | c1;
       }
     }
-    if (key_decoded.empty()) {
-      key_decoded = replace_unicode_space(key);
+  } else {
+    key_decoded = gpt2_unicode_to_bytes(key);
+  }
+  if (key_decoded.empty()) {
+    key_decoded = replace_unicode_space(key);
+  }
+  // std::cout << "[DEBUG] Tokenizer: key = `" << key << "`, token_id = " << token_id << ", decoded = `" << key_decoded
+  //           << "`" << std::endl;
+  vocab[token_id] = key_decoded;
+  root.insert(key_decoded, token_id);
+}
+
+void Tokenizer::load_trie() {
+  nlohmann::json tokenizer_json;
+  std::ifstream tokenizer_file(config.model_path / "tokenizer.json");
+  if (!tokenizer_file.is_open()) {
+    throw std::runtime_error("Failed to open tokenizer file");
+  }
+  tokenizer_file >> tokenizer_json;
+
+  const auto &vocab_json = tokenizer_json["model"]["vocab"];
+  const auto &added_tokens = tokenizer_json["added_tokens"];
+  vocab.resize(vocab_json.size() + added_tokens.size() + 100);
+
+  byte_fallback = tokenizer_json["model"].value("byte_fallback", false);
+
+  // Load vocabulary and other settings from the JSON
+  for (const auto &[key, value] : vocab_json.items()) {
+    auto token_id = value.get<std::int32_t>();
+    _add_token(key, token_id);
+  }
+  for (const auto &data : added_tokens) {
+    auto key = data["content"].get<std::string>();
+    auto token_id = data["id"].get<std::int32_t>();
+    if (vocab[token_id].empty()) {
+      _add_token(key, token_id);
     }
-    vocab[token_id] = key_decoded;
-    root.insert(key_decoded, token_id);
   }
 }
 
@@ -92,7 +105,8 @@ std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
   if (bos_token_id >= 0) {
     tokens.push_back(bos_token_id);
   }
-  for (std::size_t i = 0; i < text.size(); ++i) {
+  std::size_t i = 0;
+  while (i < text.size()) {
     TokenizerTrieNode *p = &root, *valid_p = nullptr;
     std::size_t j = i, valid_j = i;
     while (j < text.size()) {
@@ -110,9 +124,10 @@ std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
     }
     if (valid_p) {
       tokens.push_back(valid_p->token_id);
-      i = valid_j - 1;
+      i = valid_j;
     } else {
       tokens.push_back(-1);
+      i += 1;
     }
   }
   if (eos_token_id >= 0) {

@@ -34,8 +34,9 @@ int main(int argc, char *argv[]) {
 
   std::cout << ">>> " << std::flush;
 
-  std::string text = "用中文介绍一下雷军？";
-  std::cin >> text;
+  std::string text = "";
+  // std::cin >> text;
+  std::getline(std::cin, text);
   const auto tokens = tokenizer.encode(text);
   std::cout << "[DEBUG] Encoded tokens: " << tokens << std::endl;
   std::cout << "[DEBUG] Decoded text: " << tokenizer._debug_decode(tokens) << std::endl;
