@@ -28,6 +28,7 @@ Config::Config(const fs::path &path) : model_path(path) {
   num_attention_heads = config_json.value("num_attention_heads", -1);
   tie_word_embeddings = config_json.value("tie_word_embeddings", false);
   rope_theta = config_json.value("rope_theta", 1000000.0f);
+  rms_norm_eps = config_json.value("rms_norm_eps", 1e-6f);
 
   bos_token_id = config_json.value("bos_token_id", -1);
   eos_token_id = config_json.value("eos_token_id", -1);

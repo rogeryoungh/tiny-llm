@@ -48,7 +48,7 @@ void InferenceCtx::_embeding(const Model &model, std::int32_t token) {
 void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
                                  std::int32_t kv_pos, std::int32_t kv_len) {
   // 1. Layer normalization on input
-  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.input_norm.as<float>(), config.hidden_size, 1e-5);
+  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.input_norm.as<float>(), config.hidden_size, config.rms_norm_eps);
 
   // 2. Self-attention
   const std::int32_t head_dim = config.hidden_size / config.num_attention_heads;
@@ -93,7 +93,7 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   }
 
   // 5. Layer normalization on output
-  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.post_norm.as<float>(), config.hidden_size, 1e-5);
+  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.post_norm.as<float>(), config.hidden_size, config.rms_norm_eps);
 
   // 6. MLP
   matrix_mul_vec_fp32(hb.as<float>(), xb.as<float>(), block.mlp_gate.as<float>(), config.hidden_size,
@@ -129,7 +129,7 @@ void InferenceCtx::forward(const Model &model, std::int32_t token, std::int32_t 
   }
 
   // 3. Final layer normalization
-  rms_norm_fp32(x.as<float>(), x.as<float>(), model.weight.norm.as<float>(), config.hidden_size, 1e-5);
+  rms_norm_fp32(x.as<float>(), x.as<float>(), model.weight.norm.as<float>(), config.hidden_size, config.rms_norm_eps);
 
   // 4. Compute logits
   matrix_mul_vec_fp32(logits.as<float>(), x.as<float>(), model.weight.lm_head.as<float>(), config.hidden_size,
