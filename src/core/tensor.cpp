@@ -1,6 +1,5 @@
 #include "tensor.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <nlohmann/json.hpp>
 #include <stdexcept>

@@ -41,12 +41,18 @@ void Model::load_weights() {
     block.mlp_up = _create_tensor(std::format("model.layers.{}.mlp.up_proj.weight", i));
     block.input_norm = _create_tensor(std::format("model.layers.{}.input_layernorm.weight", i));
     block.post_norm = _create_tensor(std::format("model.layers.{}.post_attention_layernorm.weight", i));
-    const std::size_t hidden_dim = config.hidden_size;
-    const std::size_t head_dim = config.hidden_size / config.num_attention_heads;
 
-    _permute_qk(block.attn_q, config.num_attention_heads, head_dim, hidden_dim);
+    _permute_qk(block.attn_q, config.num_attention_heads);
+    _permute_qk(block.attn_k, config.num_key_value_heads);
 
-    _permute_qk(block.attn_k, config.num_key_value_heads, head_dim, hidden_dim);
+    if (config.model_type == "qwen2") {
+      block.attn_q_bias = _create_tensor(std::format("model.layers.{}.self_attn.q_proj.bias", i));
+      block.attn_k_bias = _create_tensor(std::format("model.layers.{}.self_attn.k_proj.bias", i));
+      block.attn_v_bias = _create_tensor(std::format("model.layers.{}.self_attn.v_proj.bias", i));
+
+      _permute_qk(block.attn_q_bias, config.num_attention_heads);
+      _permute_qk(block.attn_k_bias, config.num_key_value_heads);
+    }
   }
 
   if (config.tie_word_embeddings) {
@@ -56,33 +62,37 @@ void Model::load_weights() {
   }
 }
 
-void Model::_permute_qk(Tensor &q, std::size_t heads, std::size_t head_dim, std::size_t hidden_dim) {
-  const std::size_t block_elems = head_dim * hidden_dim;
+void Model::_permute_qk(Tensor &q, std::size_t heads) {
+  const size_t row = q.shape[0], col = q.shape[1];
+  const size_t head_dim = config.hidden_size / config.num_attention_heads;
+  const size_t half_dim = head_dim / 2;
 
-  std::vector<float> wr(block_elems);
+  std::vector<float> tmp(row * col);
+  std::copy_n(q.as<float>(), row * col, tmp.data());
 
-  const std::size_t half = head_dim / 2;
+  if (col > 1) {
+    // 2D case: permute within each head
+    for (size_t h = 0; h < heads; ++h) {
+      float *head_data = q.as<float>() + h * head_dim * row;
+      const float *src_data = tmp.data() + h * head_dim * row;
 
-  for (std::size_t h = 0; h < heads; ++h) {
-    auto *base = q.as<float>() + h * block_elems;
-
-    std::copy_n(base, block_elems, wr.data());
-
-    for (std::size_t i = 0; i < head_dim; ++i) {
-      const std::size_t block = i / half;
-      const std::size_t idx = i % half;
-      const std::size_t new_row = idx * 2 + block;
-
-      const float *src_row = wr.data() + i * hidden_dim;
-      float *dst_row = base + new_row * hidden_dim;
-
-      std::copy_n(src_row, hidden_dim, dst_row);
+      for (size_t i = 0; i < head_dim; ++i) {
+        size_t new_idx = (i % half_dim) * 2 + (i / half_dim);
+        std::copy_n(src_data + i * row, row, head_data + new_idx * row);
+      }
+    }
+  } else {
+    // 1D case: permute rows
+    for (size_t h = 0; h < heads; ++h) {
+      for (size_t i = 0; i < head_dim; ++i) {
+        size_t old_idx = h * head_dim + (i / 2) + (i % 2) * half_dim;
+        q.as<float>()[h * head_dim + i] = tmp[old_idx];
+      }
     }
   }
 }
 
 Model::~Model() {
-  // Deallocate all tensors
   for (auto &block : weight.blocks) {
     alloc.dealloc(block.attn_q.data);
     alloc.dealloc(block.attn_k.data);
@@ -93,9 +103,18 @@ Model::~Model() {
     alloc.dealloc(block.mlp_up.data);
     alloc.dealloc(block.input_norm.data);
     alloc.dealloc(block.post_norm.data);
+
+    if (!block.attn_q_bias.data.empty()) {
+      alloc.dealloc(block.attn_q_bias.data);
+      alloc.dealloc(block.attn_k_bias.data);
+      alloc.dealloc(block.attn_v_bias.data);
+    }
   }
   alloc.dealloc(weight.embed.data);
   alloc.dealloc(weight.norm.data);
+  if (weight.lm_head.data.empty()) {
+    alloc.dealloc(weight.lm_head.data);
+  }
 }
 
 } // namespace tinyllm

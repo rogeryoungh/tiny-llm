@@ -14,6 +14,8 @@ inline float silu_fp32(float x) { return x / (1.0f + std::exp(-x)); }
 
 void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n);
 
+void matrix_mul_vec_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m, std::size_t n);
+
 void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_t pos, float theta,
                        std::size_t rotary_dim);
 

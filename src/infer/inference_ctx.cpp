@@ -34,6 +34,10 @@ InferenceCtx::~InferenceCtx() {
   alloc.dealloc(q.data);
   alloc.dealloc(k.data);
   alloc.dealloc(v.data);
+  for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
+    alloc.dealloc(k_cache[i].data);
+    alloc.dealloc(v_cache[i].data);
+  }
   alloc.dealloc(attn.data);
   alloc.dealloc(logits.data);
 }
@@ -55,9 +59,20 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   std::int32_t q_dim = config.num_attention_heads * head_dim;
   std::int32_t kv_dim = config.num_key_value_heads * head_dim;
 
-  matrix_mul_vec_fp32(q.as<float>(), xb.as<float>(), block.attn_q.as<float>(), config.hidden_size, q_dim);
-  matrix_mul_vec_fp32(k.as<float>(), xb.as<float>(), block.attn_k.as<float>(), config.hidden_size, kv_dim);
-  matrix_mul_vec_fp32(v.as<float>(), xb.as<float>(), block.attn_v.as<float>(), config.hidden_size, kv_dim);
+  const bool has_qkv_bias = !block.attn_k_bias.data.empty();
+
+  if (has_qkv_bias) {
+    matrix_mul_vec_bias_fp32(q.as<float>(), xb.as<float>(), block.attn_q.as<float>(), block.attn_q_bias.as<float>(),
+                             config.hidden_size, q_dim);
+    matrix_mul_vec_bias_fp32(k.as<float>(), xb.as<float>(), block.attn_k.as<float>(), block.attn_k_bias.as<float>(),
+                             config.hidden_size, kv_dim);
+    matrix_mul_vec_bias_fp32(v.as<float>(), xb.as<float>(), block.attn_v.as<float>(), block.attn_v_bias.as<float>(),
+                             config.hidden_size, kv_dim);
+  } else {
+    matrix_mul_vec_fp32(q.as<float>(), xb.as<float>(), block.attn_q.as<float>(), config.hidden_size, q_dim);
+    matrix_mul_vec_fp32(k.as<float>(), xb.as<float>(), block.attn_k.as<float>(), config.hidden_size, kv_dim);
+    matrix_mul_vec_fp32(v.as<float>(), xb.as<float>(), block.attn_v.as<float>(), config.hidden_size, kv_dim);
+  }
 
   rope_inplace_fp32(q.as<float>(), q_dim, head_dim, pos, config.rope_theta, head_dim);
   rope_inplace_fp32(k.as<float>(), kv_dim, head_dim, pos, config.rope_theta, head_dim);
