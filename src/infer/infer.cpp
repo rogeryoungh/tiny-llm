@@ -1,4 +1,5 @@
 #include "infer.hpp"
+#include "../utils/precision.hpp"
 
 namespace tinyllm {
 
@@ -78,6 +79,28 @@ void attention_softmax_fp32(float *xout, float *atth, const float *qh, const flo
     float sum = 0.0f;
     for (std::size_t j = 0; j < kv_len; ++j) {
       sum += atth[j] * vh[j * kv_stride + i];
+    }
+    xout[i] = sum;
+  }
+}
+
+void attention_softmax_fp32(float *xout, float *atth, const float *qh, const std::uint16_t *kh, const std::uint16_t *vh,
+                            std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
+  std::size_t kv_stride = n_kv_heads * head_dim;
+  for (std::size_t i = 0; i < kv_len; ++i) {
+    float sum = 0.0f;
+    for (std::size_t j = 0; j < head_dim; ++j) {
+      sum += qh[j] * bf16_to_fp32(kh[i * kv_stride + j]);
+    }
+    atth[i] = sum / std::sqrt(head_dim);
+  }
+
+  softmax_fp32(atth, atth, kv_len);
+
+  for (std::size_t i = 0; i < head_dim; ++i) {
+    float sum = 0.0f;
+    for (std::size_t j = 0; j < kv_len; ++j) {
+      sum += atth[j] * bf16_to_fp32(vh[j * kv_stride + i]);
     }
     xout[i] = sum;
   }

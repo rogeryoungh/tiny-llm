@@ -1,4 +1,5 @@
 #include "safetensors_reader.hpp"
+#include "precision.hpp"
 
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -76,13 +77,10 @@ void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte
   } else {
     if (type == DataType::F32 && meta_dtype == DataType::BF16) {
       assert(span.size() == (end - begin) * 2);
-      auto *bf16_ptr = reinterpret_cast<std::uint16_t *>(span.data() + span.size() / 2);
+      auto *half_ptr = reinterpret_cast<char *>(span.data() + span.size() / 2);
       auto *fp32_ptr = reinterpret_cast<std::uint32_t *>(span.data());
-      file.read(reinterpret_cast<char *>(bf16_ptr), end - begin);
-      const std::size_t num_fp32 = span.size() / sizeof(std::uint32_t);
-      for (std::size_t i = 0; i < num_fp32; ++i) {
-        fp32_ptr[i] = static_cast<std::uint32_t>(bf16_ptr[i]) << 16;
-      }
+      file.read(half_ptr, end - begin);
+      convert_bf16_to_fp32_inplace(span);
     } else {
       throw std::runtime_error("Unsupported data type conversion from " + metadata.dtype + " to " +
                                dtype_to_string(type));

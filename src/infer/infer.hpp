@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 
 namespace tinyllm {
 
@@ -20,6 +21,9 @@ void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_
                        std::size_t rotary_dim);
 
 void attention_softmax_fp32(float *out,  float *atth, const float *qh, const float *kh, const float *vh,
+                            std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
+
+void attention_softmax_fp32(float *out,  float *atth, const float *qh, const std::uint16_t *kh, const std::uint16_t *vh,
                             std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
 
 } // namespace tinyllm

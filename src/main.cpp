@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "[DEBUG] Weight memory usage: " << (model.alloc.total_allocated >> 20) << " MB" << std::endl;
 
-  tinyllm::InferenceCtx ctx(config, 4096);
+  tinyllm::InferenceCtx ctx(config, 4096, tinyllm::DataType::BF16);
 
   std::cout << "[DEBUG] Inference memory usage: " << (ctx.alloc.total_allocated >> 20) << " MB" << std::endl;
 

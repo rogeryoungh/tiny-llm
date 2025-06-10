@@ -1,9 +1,12 @@
 #include "inference_ctx.hpp"
+#include "../utils/precision.hpp"
 #include "infer.hpp"
+#include <cstddef>
 
 namespace tinyllm {
 
-InferenceCtx::InferenceCtx(Config &cfg, std::size_t kv_size_) : config(cfg), kv_size(kv_size_) {
+InferenceCtx::InferenceCtx(Config &cfg, std::size_t kv_size_, DataType kv_dtype_)
+    : config(cfg), kv_size(kv_size_), kv_dtype(kv_dtype_) {
   x = alloc.alloc(DataType::F32, config.hidden_size);
   xb = alloc.alloc(DataType::F32, config.hidden_size);
   xb2 = alloc.alloc(DataType::F32, config.hidden_size);
@@ -17,8 +20,8 @@ InferenceCtx::InferenceCtx(Config &cfg, std::size_t kv_size_) : config(cfg), kv_
   k_cache.resize(config.num_hidden_layers);
   v_cache.resize(config.num_hidden_layers);
   for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    k_cache[i] = alloc.alloc(DataType::F32, config.num_key_value_heads, kv_size, head_dim);
-    v_cache[i] = alloc.alloc(DataType::F32, config.num_key_value_heads, kv_size, head_dim);
+    k_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, head_dim);
+    v_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, head_dim);
   }
   attn = alloc.alloc(DataType::F32, config.num_attention_heads, kv_size);
 
@@ -77,15 +80,28 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   rope_inplace_fp32(q.as<float>(), q_dim, head_dim, pos, config.rope_theta, head_dim);
   rope_inplace_fp32(k.as<float>(), kv_dim, head_dim, pos, config.rope_theta, head_dim);
 
-  std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + kv_pos * kv_dim);
-  std::copy_n(v.as<float>(), kv_dim, vc.as<float>() + kv_pos * kv_dim);
+  if (kv_dtype == DataType::BF16) {
+    copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + kv_pos * kv_dim);
+    copy_fp32_to_bf16_n(v.as<float>(), kv_dim, vc.as<std::uint16_t>() + kv_pos * kv_dim);
+  } else {
+    std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + kv_pos * kv_dim);
+    std::copy_n(v.as<float>(), kv_dim, vc.as<float>() + kv_pos * kv_dim);
+  }
 
   for (std::size_t r = 0; r < kv_sink; ++r) {
-    std::copy_n(kc.as<float>() + r * kv_dim, kv_dim, k.as<float>());
+    if (kv_dtype == DataType::BF16) {
+      copy_bf16_to_fp32_n(kc.as<std::uint16_t>() + r * kv_dim, kv_dim, k.as<float>());
+    } else {
+      std::copy_n(kc.as<float>() + r * kv_dim, kv_dim, k.as<float>());
+    }
 
     rope_inplace_fp32(k.as<float>(), kv_dim, head_dim, 1, config.rope_theta, head_dim);
 
-    std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + r * kv_dim);
+    if (kv_dtype == DataType::BF16) {
+      copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + r * kv_dim);
+    } else {
+      std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + r * kv_dim);
+    }
   }
 
   // 3. Attention
@@ -95,9 +111,15 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
     const float *qh = q.as<float>() + h * head_dim;
     float *xb2h = xb2.as<float>() + h * head_dim;
     std::int32_t kv_offset = (h / q_per_head) * head_dim;
-    const float *kh = kc.as<float>() + kv_offset;
-    const float *vh = vc.as<float>() + kv_offset;
-    attention_softmax_fp32(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
+    if (kv_dtype == DataType::BF16) {
+      const std::uint16_t *kh = kc.as<std::uint16_t>() + kv_offset;
+      const std::uint16_t *vh = vc.as<std::uint16_t>() + kv_offset;
+      attention_softmax_fp32(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
+    } else {
+      const float *kh = kc.as<float>() + kv_offset;
+      const float *vh = vc.as<float>() + kv_offset;
+      attention_softmax_fp32(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
+    }
   }
 
   // 4. Combine attention outputs

@@ -11,10 +11,12 @@ struct InferenceCtx {
   TensorAlloc alloc;
   std::size_t kv_size;
 
+  DataType kv_dtype;
+
   Tensor x, xb, xb2, hb, hb2, q, k, v, attn, logits;
   std::vector<Tensor> k_cache, v_cache;
 
-  InferenceCtx(Config &cfg, std::size_t kv_size);
+  InferenceCtx(Config &cfg, std::size_t kv_size, DataType kv_dtype = DataType::F32);
   ~InferenceCtx();
 
   void forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
