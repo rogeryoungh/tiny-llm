@@ -2,7 +2,6 @@
 #include "../utils/safetensors_reader.hpp"
 
 #include <cassert>
-#include <cstring>
 #include <format>
 
 namespace tinyllm {
@@ -20,7 +19,7 @@ void Model::load_weights() {
     } else {
       std::copy(meta.shape.rbegin(), meta.shape.rend(), shape.begin());
     }
-    auto tensor = alloc.alloc_fp32(shape);
+    auto tensor = alloc.alloc(DataType::F32, shape);
     reader.load_tensor(name, tensor.data, DataType::F32);
     return tensor;
   };
@@ -94,27 +93,25 @@ void Model::_permute_qk(Tensor &q, std::size_t heads) {
 
 Model::~Model() {
   for (auto &block : weight.blocks) {
-    alloc.dealloc(block.attn_q.data);
-    alloc.dealloc(block.attn_k.data);
-    alloc.dealloc(block.attn_v.data);
-    alloc.dealloc(block.attn_o.data);
-    alloc.dealloc(block.mlp_down.data);
-    alloc.dealloc(block.mlp_gate.data);
-    alloc.dealloc(block.mlp_up.data);
-    alloc.dealloc(block.input_norm.data);
-    alloc.dealloc(block.post_norm.data);
+    alloc.dealloc(block.attn_q);
+    alloc.dealloc(block.attn_k);
+    alloc.dealloc(block.attn_v);
+    alloc.dealloc(block.attn_o);
+    alloc.dealloc(block.mlp_down);
+    alloc.dealloc(block.mlp_gate);
+    alloc.dealloc(block.mlp_up);
+    alloc.dealloc(block.input_norm);
+    alloc.dealloc(block.post_norm);
 
-    if (!block.attn_q_bias.data.empty()) {
-      alloc.dealloc(block.attn_q_bias.data);
-      alloc.dealloc(block.attn_k_bias.data);
-      alloc.dealloc(block.attn_v_bias.data);
-    }
+    alloc.dealloc(block.attn_q_bias);
+    alloc.dealloc(block.attn_k_bias);
+    alloc.dealloc(block.attn_v_bias);
   }
-  alloc.dealloc(weight.embed.data);
-  alloc.dealloc(weight.norm.data);
-  if (weight.lm_head.data.empty()) {
-    alloc.dealloc(weight.lm_head.data);
+  alloc.dealloc(weight.embed);
+  if (!config.tie_word_embeddings) {
+    alloc.dealloc(weight.lm_head);
   }
+  alloc.dealloc(weight.norm);
 }
 
 } // namespace tinyllm

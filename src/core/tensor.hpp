@@ -19,7 +19,7 @@ DataType string_to_dtype(const std::string &dtype_str);
 struct Tensor {
   std::array<std::int32_t, 4> shape{};
   DataType dtype{};
-  std::span<std::byte> data;
+  std::span<std::byte> data{};
 
   template <typename T> T *as() { return reinterpret_cast<T *>(data.data()); }
 
@@ -34,11 +34,13 @@ struct TensorAlloc {
 
   std::span<std::byte> alloc(std::size_t size);
 
-  Tensor alloc_fp32(std::array<std::int32_t, 4> shape);
-
-  Tensor alloc_fp32(std::int32_t s0, std::int32_t s1 = 1, std::int32_t s2 = 1, std::int32_t s3 = 1);
-
   void dealloc(std::span<std::byte> span);
+
+  void dealloc(Tensor &tensor);
+
+  Tensor alloc(DataType dtype, std::array<std::int32_t, 4> shape);
+
+  Tensor alloc(DataType dtype, std::int32_t s0, std::int32_t s1 = 1, std::int32_t s2 = 1, std::int32_t s3 = 1);
 };
 
 } // namespace tinyllm

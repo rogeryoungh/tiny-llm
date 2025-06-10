@@ -4,42 +4,42 @@
 namespace tinyllm {
 
 InferenceCtx::InferenceCtx(Config &cfg, std::size_t kv_size_) : config(cfg), kv_size(kv_size_) {
-  x = alloc.alloc_fp32(config.hidden_size);
-  xb = alloc.alloc_fp32(config.hidden_size);
-  xb2 = alloc.alloc_fp32(config.hidden_size);
-  hb = alloc.alloc_fp32(config.intermediate_size);
-  hb2 = alloc.alloc_fp32(config.intermediate_size);
+  x = alloc.alloc(DataType::F32, config.hidden_size);
+  xb = alloc.alloc(DataType::F32, config.hidden_size);
+  xb2 = alloc.alloc(DataType::F32, config.hidden_size);
+  hb = alloc.alloc(DataType::F32, config.intermediate_size);
+  hb2 = alloc.alloc(DataType::F32, config.intermediate_size);
   const std::int32_t head_dim = config.hidden_size / config.num_attention_heads;
-  q = alloc.alloc_fp32(config.num_attention_heads, head_dim);
-  k = alloc.alloc_fp32(config.num_key_value_heads, head_dim);
-  v = alloc.alloc_fp32(config.num_key_value_heads, head_dim);
+  q = alloc.alloc(DataType::F32, config.num_attention_heads, head_dim);
+  k = alloc.alloc(DataType::F32, config.num_key_value_heads, head_dim);
+  v = alloc.alloc(DataType::F32, config.num_key_value_heads, head_dim);
 
   k_cache.resize(config.num_hidden_layers);
   v_cache.resize(config.num_hidden_layers);
   for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    k_cache[i] = alloc.alloc_fp32(config.num_key_value_heads, kv_size, head_dim);
-    v_cache[i] = alloc.alloc_fp32(config.num_key_value_heads, kv_size, head_dim);
+    k_cache[i] = alloc.alloc(DataType::F32, config.num_key_value_heads, kv_size, head_dim);
+    v_cache[i] = alloc.alloc(DataType::F32, config.num_key_value_heads, kv_size, head_dim);
   }
-  attn = alloc.alloc_fp32(config.num_attention_heads, kv_size);
+  attn = alloc.alloc(DataType::F32, config.num_attention_heads, kv_size);
 
-  logits = alloc.alloc_fp32(config.vocab_size);
+  logits = alloc.alloc(DataType::F32, config.vocab_size);
 }
 
 InferenceCtx::~InferenceCtx() {
-  alloc.dealloc(x.data);
-  alloc.dealloc(xb.data);
-  alloc.dealloc(xb2.data);
-  alloc.dealloc(hb.data);
-  alloc.dealloc(hb2.data);
-  alloc.dealloc(q.data);
-  alloc.dealloc(k.data);
-  alloc.dealloc(v.data);
+  alloc.dealloc(x);
+  alloc.dealloc(xb);
+  alloc.dealloc(xb2);
+  alloc.dealloc(hb);
+  alloc.dealloc(hb2);
+  alloc.dealloc(q);
+  alloc.dealloc(k);
+  alloc.dealloc(v);
   for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    alloc.dealloc(k_cache[i].data);
-    alloc.dealloc(v_cache[i].data);
+    alloc.dealloc(k_cache[i]);
+    alloc.dealloc(v_cache[i]);
   }
-  alloc.dealloc(attn.data);
-  alloc.dealloc(logits.data);
+  alloc.dealloc(attn);
+  alloc.dealloc(logits);
 }
 
 void InferenceCtx::_embeding(const Model &model, std::int32_t token) {

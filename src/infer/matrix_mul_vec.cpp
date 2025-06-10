@@ -36,23 +36,13 @@ static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const float
     num_threads = 4;
 
   std::vector<std::thread> threads;
-
-  auto worker = [&](std::size_t start, std::size_t end) {
-    for (std::size_t i = start; i < end; ++i) {
-      float sum = 0.0f;
-      for (std::size_t j = 0; j < m; ++j) {
-        auto aj = a[j];
-        auto bj = b[i * m + j];
-        sum += bj * aj;
-      }
-      out[i] = sum;
-    }
-  };
   std::size_t chunk_size = (n + num_threads - 1) / num_threads;
 
   for (std::size_t i = 0; i < n; i += chunk_size) {
     std::size_t end = std::min(i + chunk_size, n);
-    threads.emplace_back(worker, i, end);
+    if (i >= end)
+      break;
+    threads.emplace_back(matrix_mul_vec_fp32_naive, out + i, a, b + i * m, m, end - i);
   }
 
   for (auto &thread : threads) {
@@ -60,29 +50,20 @@ static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const float
   }
 }
 
-static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const float *b, const float* bias, std::size_t m, std::size_t n) {
+static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const float *b, const float *bias,
+                                              std::size_t m, std::size_t n) {
   std::uint32_t num_threads = std::thread::hardware_concurrency();
   if (num_threads == 0)
     num_threads = 4;
 
   std::vector<std::thread> threads;
-
-  auto worker = [&](std::size_t start, std::size_t end) {
-    for (std::size_t i = start; i < end; ++i) {
-      float sum = 0.0f;
-      for (std::size_t j = 0; j < m; ++j) {
-        auto aj = a[j];
-        auto bj = b[i * m + j];
-        sum += bj * aj;
-      }
-      out[i] = sum + bias[i];
-    }
-  };
   std::size_t chunk_size = (n + num_threads - 1) / num_threads;
 
   for (std::size_t i = 0; i < n; i += chunk_size) {
     std::size_t end = std::min(i + chunk_size, n);
-    threads.emplace_back(worker, i, end);
+    if (i >= end)
+      break;
+    threads.emplace_back(matrix_mul_vec_bias_fp32_naive, out + i, a, b + i * m, bias + i, m, end - i);
   }
 
   for (auto &thread : threads) {
