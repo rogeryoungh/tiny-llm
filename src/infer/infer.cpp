@@ -3,7 +3,8 @@
 
 namespace tinyllm {
 
-void rms_norm_fp32(float *out, const float *x, const float *weight, std::size_t size, float eps) {
+template <typename T>
+static void _rms_norm_fp32(float *out, const float *x, const T *weight, std::size_t size, float eps) {
   float norm = 0.0f;
   for (std::size_t i = 0; i < size; ++i) {
     norm += x[i] * x[i];
@@ -11,8 +12,16 @@ void rms_norm_fp32(float *out, const float *x, const float *weight, std::size_t 
   norm = std::sqrt(norm / size + eps);
   float inv_norm = 1.0f / norm;
   for (std::size_t i = 0; i < size; ++i) {
-    out[i] = (x[i] * inv_norm) * weight[i];
+    out[i] = (x[i] * inv_norm) * _cvt_to_fp32<T>(weight[i]);
   }
+}
+
+void rms_norm_fp32(float *out, const float *x, const float *weight, std::size_t size, float eps) {
+  _rms_norm_fp32(out, x, weight, size, eps);
+}
+
+void rms_norm_fp32_weight_bf16(float *out, const float *x, const std::uint16_t *weight, std::size_t size, float eps) {
+  _rms_norm_fp32(out, x, weight, size, eps);
 }
 
 void softmax_fp32(float *out, const float *x, std::size_t size) {
@@ -62,13 +71,14 @@ void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_
   }
 }
 
-void attention_softmax_fp32(float *xout, float *atth, const float *qh, const float *kh, const float *vh,
-                            std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
+template <typename T>
+static void _attention_softmax_fp32(float *xout, float *atth, const float *qh, const T *kh, const T *vh,
+                                    std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
   std::size_t kv_stride = n_kv_heads * head_dim;
   for (std::size_t i = 0; i < kv_len; ++i) {
     float sum = 0.0f;
     for (std::size_t j = 0; j < head_dim; ++j) {
-      sum += qh[j] * kh[i * kv_stride + j];
+      sum += qh[j] * _cvt_to_fp32<T>(kh[i * kv_stride + j]);
     }
     atth[i] = sum / std::sqrt(head_dim);
   }
@@ -78,32 +88,21 @@ void attention_softmax_fp32(float *xout, float *atth, const float *qh, const flo
   for (std::size_t i = 0; i < head_dim; ++i) {
     float sum = 0.0f;
     for (std::size_t j = 0; j < kv_len; ++j) {
-      sum += atth[j] * vh[j * kv_stride + i];
+      sum += atth[j] * _cvt_to_fp32<T>(vh[j * kv_stride + i]);
     }
     xout[i] = sum;
   }
 }
 
-void attention_softmax_fp32(float *xout, float *atth, const float *qh, const std::uint16_t *kh, const std::uint16_t *vh,
+void attention_softmax_fp32(float *xout, float *atth, const float *qh, const float *kh, const float *vh,
                             std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
-  std::size_t kv_stride = n_kv_heads * head_dim;
-  for (std::size_t i = 0; i < kv_len; ++i) {
-    float sum = 0.0f;
-    for (std::size_t j = 0; j < head_dim; ++j) {
-      sum += qh[j] * bf16_to_fp32(kh[i * kv_stride + j]);
-    }
-    atth[i] = sum / std::sqrt(head_dim);
-  }
+  _attention_softmax_fp32(xout, atth, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+}
 
-  softmax_fp32(atth, atth, kv_len);
-
-  for (std::size_t i = 0; i < head_dim; ++i) {
-    float sum = 0.0f;
-    for (std::size_t j = 0; j < kv_len; ++j) {
-      sum += atth[j] * bf16_to_fp32(vh[j * kv_stride + i]);
-    }
-    xout[i] = sum;
-  }
+void attention_softmax_fp32_kv_bf16(float *xout, float *atth, const float *qh, const std::uint16_t *kh,
+                                    const std::uint16_t *vh, std::size_t head_dim, std::size_t n_kv_heads,
+                                    std::size_t kv_len) {
+  _attention_softmax_fp32(xout, atth, qh, kh, vh, head_dim, n_kv_heads, kv_len);
 }
 
 } // namespace tinyllm

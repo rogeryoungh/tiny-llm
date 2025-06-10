@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
   std::cout << std::format("[DEBUG] Tokenizer loaded in {:3f} ms.", tokenizer_load_timer.elapsed_ms()) << std::endl;
 
   tinyllm::Stopwatch model_load_timer;
-  tinyllm::Model model(config);
+  tinyllm::Model model(config, tinyllm::DataType::BF16);
   model.load_weights();
   std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "[DEBUG] Weight memory usage: " << (model.alloc.total_allocated >> 20) << " MB" << std::endl;
 
-  tinyllm::InferenceCtx ctx(config, 4096, tinyllm::DataType::BF16);
+  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DataType::BF16);
 
   std::cout << "[DEBUG] Inference memory usage: " << (ctx.alloc.total_allocated >> 20) << " MB" << std::endl;
 
@@ -53,9 +53,9 @@ int main(int argc, char *argv[]) {
   tinyllm::Stopwatch prefill_timer;
   for (std::int32_t i = 0; i < tokens.size(); ++i) {
     if (i + 1 < tokens.size()) {
-      ctx.forward_prefill(model, tokens[i], i);
+      ctx.forward_prefill(tokens[i], i);
     } else {
-      ctx.forward(model, tokens[i], i);
+      ctx.forward(tokens[i], i);
     }
   }
   std::cout << std::format("[DEBUG] Prefill completed in {:3f} ms.", prefill_timer.elapsed_ms()) << std::endl;
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
       std::cout << std::string_view(answer_buffer.data(), length) << std::flush;
       answer_buffer.erase(0, length);
     }
-    ctx.forward(model, token, tokens.size() + i);
+    ctx.forward(token, tokens.size() + i);
   }
   if (!answer_buffer.empty()) {
     std::cout << answer_buffer << std::flush;

@@ -24,16 +24,15 @@ struct ModelWeights {
 struct Model {
   Config &config;
   TensorAlloc alloc;
+  DataType dtype;
 
   ModelWeights weight;
 
-  Model(Config &cfg);
+  Model(Config &cfg, DataType dtype = DataType::F32);
 
   ~Model();
 
   void load_weights();
-
-  void _permute_qk(Tensor &q, std::size_t n_heads);
 };
 
 } // namespace tinyllm

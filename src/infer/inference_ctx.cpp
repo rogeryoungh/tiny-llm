@@ -5,8 +5,8 @@
 
 namespace tinyllm {
 
-InferenceCtx::InferenceCtx(Config &cfg, std::size_t kv_size_, DataType kv_dtype_)
-    : config(cfg), kv_size(kv_size_), kv_dtype(kv_dtype_) {
+InferenceCtx::InferenceCtx(Model &model_, std::size_t kv_size, DataType kv_dtype)
+    : model(model_), config(model.config), kv_size(kv_size), kv_dtype(kv_dtype) {
   x = alloc.alloc(DataType::F32, config.hidden_size);
   xb = alloc.alloc(DataType::F32, config.hidden_size);
   xb2 = alloc.alloc(DataType::F32, config.hidden_size);
@@ -45,17 +45,35 @@ InferenceCtx::~InferenceCtx() {
   alloc.dealloc(logits);
 }
 
-void InferenceCtx::_embeding(const Model &model, std::int32_t token) {
-  const float *ep = model.weight.embed.as<float>();
-  float *xp = x.as<float>();
+void InferenceCtx::_rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps) {
+  if (model.dtype == DataType::BF16) {
+    rms_norm_fp32_weight_bf16(out, x, weight.as<std::uint16_t>(), size, eps);
+  } else {
+    rms_norm_fp32(out, x, weight.as<float>(), size, eps);
+  }
+}
 
-  std::copy_n(ep + token * config.hidden_size, config.hidden_size, xp);
+void InferenceCtx::_matrix_mul_vec(float *out, const float *a, const Tensor &weight, std::size_t m, std::size_t n) {
+  if (model.dtype == DataType::BF16) {
+    matrix_mul_vec_fp32_b_bf16(out, a, weight.as<std::uint16_t>(), m, n);
+  } else {
+    matrix_mul_vec_fp32(out, a, weight.as<float>(), m, n);
+  }
+}
+
+void InferenceCtx::_matrix_mul_vec_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias,
+                                        std::size_t m, std::size_t n) {
+  if (model.dtype == DataType::BF16) {
+    matrix_mul_vec_bias_fp32_b_bf16(out, a, weight.as<std::uint16_t>(), bias.as<std::uint16_t>(), m, n);
+  } else {
+    matrix_mul_vec_bias_fp32(out, a, weight.as<float>(), bias.as<float>(), m, n);
+  }
 }
 
 void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
                                  std::int32_t kv_pos, std::int32_t kv_len) {
   // 1. Layer normalization on input
-  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.input_norm.as<float>(), config.hidden_size, config.rms_norm_eps);
+  _rms_norm(xb.as<float>(), x.as<float>(), block.input_norm, config.hidden_size, config.rms_norm_eps);
 
   // 2. Self-attention
   const std::int32_t head_dim = config.hidden_size / config.num_attention_heads;
@@ -65,16 +83,13 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   const bool has_qkv_bias = !block.attn_k_bias.data.empty();
 
   if (has_qkv_bias) {
-    matrix_mul_vec_bias_fp32(q.as<float>(), xb.as<float>(), block.attn_q.as<float>(), block.attn_q_bias.as<float>(),
-                             config.hidden_size, q_dim);
-    matrix_mul_vec_bias_fp32(k.as<float>(), xb.as<float>(), block.attn_k.as<float>(), block.attn_k_bias.as<float>(),
-                             config.hidden_size, kv_dim);
-    matrix_mul_vec_bias_fp32(v.as<float>(), xb.as<float>(), block.attn_v.as<float>(), block.attn_v_bias.as<float>(),
-                             config.hidden_size, kv_dim);
+    _matrix_mul_vec_bias(q.as<float>(), xb.as<float>(), block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
+    _matrix_mul_vec_bias(k.as<float>(), xb.as<float>(), block.attn_k, block.attn_k_bias, config.hidden_size, kv_dim);
+    _matrix_mul_vec_bias(v.as<float>(), xb.as<float>(), block.attn_v, block.attn_v_bias, config.hidden_size, kv_dim);
   } else {
-    matrix_mul_vec_fp32(q.as<float>(), xb.as<float>(), block.attn_q.as<float>(), config.hidden_size, q_dim);
-    matrix_mul_vec_fp32(k.as<float>(), xb.as<float>(), block.attn_k.as<float>(), config.hidden_size, kv_dim);
-    matrix_mul_vec_fp32(v.as<float>(), xb.as<float>(), block.attn_v.as<float>(), config.hidden_size, kv_dim);
+    _matrix_mul_vec(q.as<float>(), xb.as<float>(), block.attn_q, config.hidden_size, q_dim);
+    _matrix_mul_vec(k.as<float>(), xb.as<float>(), block.attn_k, config.hidden_size, kv_dim);
+    _matrix_mul_vec(v.as<float>(), xb.as<float>(), block.attn_v, config.hidden_size, kv_dim);
   }
 
   rope_inplace_fp32(q.as<float>(), q_dim, head_dim, pos, config.rope_theta, head_dim);
@@ -114,7 +129,7 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
     if (kv_dtype == DataType::BF16) {
       const std::uint16_t *kh = kc.as<std::uint16_t>() + kv_offset;
       const std::uint16_t *vh = vc.as<std::uint16_t>() + kv_offset;
-      attention_softmax_fp32(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
+      attention_softmax_fp32_kv_bf16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
     } else {
       const float *kh = kc.as<float>() + kv_offset;
       const float *vh = vc.as<float>() + kv_offset;
@@ -123,34 +138,36 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   }
 
   // 4. Combine attention outputs
-  matrix_mul_vec_fp32(hb.as<float>(), xb2.as<float>(), block.attn_o.as<float>(), q_dim, config.hidden_size);
+  _matrix_mul_vec(hb.as<float>(), xb2.as<float>(), block.attn_o, q_dim, config.hidden_size);
 
   for (std::int32_t i = 0; i < config.hidden_size; ++i) {
     x.as<float>()[i] += hb.as<float>()[i];
   }
 
   // 5. Layer normalization on output
-  rms_norm_fp32(xb.as<float>(), x.as<float>(), block.post_norm.as<float>(), config.hidden_size, config.rms_norm_eps);
+  _rms_norm(xb.as<float>(), x.as<float>(), block.post_norm, config.hidden_size, config.rms_norm_eps);
 
   // 6. MLP
-  matrix_mul_vec_fp32(hb.as<float>(), xb.as<float>(), block.mlp_gate.as<float>(), config.hidden_size,
-                      config.intermediate_size);
-  matrix_mul_vec_fp32(hb2.as<float>(), xb.as<float>(), block.mlp_up.as<float>(), config.hidden_size,
-                      config.intermediate_size);
+  _matrix_mul_vec(hb.as<float>(), xb.as<float>(), block.mlp_gate, config.hidden_size, config.intermediate_size);
+  _matrix_mul_vec(hb2.as<float>(), xb.as<float>(), block.mlp_up, config.hidden_size, config.intermediate_size);
   for (std::int32_t i = 0; i < config.intermediate_size; ++i) {
     hb.as<float>()[i] = silu_fp32(hb.as<float>()[i]) * hb2.as<float>()[i];
   }
-  matrix_mul_vec_fp32(xb2.as<float>(), hb.as<float>(), block.mlp_down.as<float>(), config.intermediate_size,
-                      config.hidden_size);
+  _matrix_mul_vec(xb2.as<float>(), hb.as<float>(), block.mlp_down, config.intermediate_size, config.hidden_size);
 
   for (std::int32_t i = 0; i < config.hidden_size; ++i) {
     x.as<float>()[i] += xb2.as<float>()[i];
   }
 }
 
-void InferenceCtx::forward(const Model &model, std::int32_t token, std::int32_t pos) {
+void InferenceCtx::forward(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
-  _embeding(model, token);
+  if (model.dtype == DataType::BF16) {
+    copy_bf16_to_fp32_n(model.weight.embed.as<std::uint16_t>() + token * config.hidden_size, config.hidden_size,
+                        x.as<float>());
+  } else {
+    std::copy_n(model.weight.embed.as<float>() + token * config.hidden_size, config.hidden_size, x.as<float>());
+  }
 
   // When decoding past the context length, keep the first few tokens in the KV cache
   // untouched as "attention sinks" while replacing the rest in ring order.
@@ -166,16 +183,20 @@ void InferenceCtx::forward(const Model &model, std::int32_t token, std::int32_t 
   }
 
   // 3. Final layer normalization
-  rms_norm_fp32(x.as<float>(), x.as<float>(), model.weight.norm.as<float>(), config.hidden_size, config.rms_norm_eps);
+  _rms_norm(x.as<float>(), x.as<float>(), model.weight.norm, config.hidden_size, config.rms_norm_eps);
 
   // 4. Compute logits
-  matrix_mul_vec_fp32(logits.as<float>(), x.as<float>(), model.weight.lm_head.as<float>(), config.hidden_size,
-                      config.vocab_size);
+  _matrix_mul_vec(logits.as<float>(), x.as<float>(), model.weight.lm_head, config.hidden_size, config.vocab_size);
 }
 
-void InferenceCtx::forward_prefill(const Model &model, std::int32_t token, std::int32_t pos) {
+void InferenceCtx::forward_prefill(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
-  _embeding(model, token);
+  if (model.dtype == DataType::BF16) {
+    copy_bf16_to_fp32_n(model.weight.embed.as<std::uint16_t>() + token * config.hidden_size, config.hidden_size,
+                        x.as<float>());
+  } else {
+    std::copy_n(model.weight.embed.as<float>() + token * config.hidden_size, config.hidden_size, x.as<float>());
+  }
 
   // When decoding past the context length, keep the first few tokens in the KV cache
   // untouched as "attention sinks" while replacing the rest in ring order.
