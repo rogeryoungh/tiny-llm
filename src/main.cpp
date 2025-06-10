@@ -74,9 +74,9 @@ int main(int argc, char *argv[]) {
     }
     std::string decoded_token = tokenizer.vocab[token];
     answer_buffer += decoded_token;
-    if (tinyllm::utf8_to_codepoint(answer_buffer).first > 0) {
-      std::cout << answer_buffer << std::flush;
-      answer_buffer.clear();
+    while (std::size_t length = tinyllm::utf8_to_codepoint(answer_buffer).first) {
+      std::cout << std::string_view(answer_buffer.data(), length) << std::flush;
+      answer_buffer.erase(0, length);
     }
     ctx.forward(model, token, tokens.size() + i);
   }
