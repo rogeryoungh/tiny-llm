@@ -6,11 +6,13 @@
 
 namespace tinyllm {
 
+namespace fs = std::filesystem;
+
 void SafeTensorsReader::_load_metadata(const std::string &file_name) {
   std::uint64_t metadata_size = 0;
   std::ifstream is(config_path / file_name, std::ios::binary);
   std::cout << "Loading metadata from: " << (config_path / file_name).string() << ", size "
-            << std::filesystem::file_size(config_path / file_name) << " bytes" << std::endl;
+            << fs::file_size(config_path / file_name) << " bytes" << std::endl;
   is.read(reinterpret_cast<char *>(&metadata_size), sizeof(metadata_size));
   std::vector<char> v(metadata_size);
   is.read(v.data(), v.size());
@@ -32,8 +34,14 @@ void SafeTensorsReader::_load_metadata(const std::string &file_name) {
   files[file_name] = std::move(is);
 }
 
-SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &path) : config_path(path) {
-  std::ifstream index_file(config_path / "model.safetensors.index.json");
+SafeTensorsReader::SafeTensorsReader(const fs::path &path) : config_path(path) {
+  fs::path index_path = config_path / "model.safetensors.index.json";
+  if (!fs::exists(index_path)) {
+    _load_metadata(config_path / "model.safetensors");
+    return;
+  }
+
+  std::ifstream index_file(index_path);
 
   nlohmann::json index_json;
   index_file >> index_json;
