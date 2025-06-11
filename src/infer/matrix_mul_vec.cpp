@@ -10,9 +10,10 @@ template <typename T>
 static void matrix_mul_vec_fp32_naive(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0.0f;
+    const T* b0 = b + i * m;
     for (std::size_t j = 0; j < m; ++j) {
       auto aj = a[j];
-      auto bj = _cvt_to_fp32(b[i * m + j]);
+      auto bj = _cvt_to_fp32(b0[j]);
       sum += bj * aj;
     }
     out[i] = sum;
@@ -24,9 +25,10 @@ static void matrix_mul_vec_bias_fp32_naive(float *out, const float *a, const T *
                                            std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0;
+    const T* b0 = b + i * m;
     for (std::size_t j = 0; j < m; ++j) {
       auto aj = a[j];
-      auto bj = _cvt_to_fp32(b[i * m + j]);
+      auto bj = _cvt_to_fp32(b0[j]);
       sum += bj * aj;
     }
     out[i] = sum + _cvt_to_fp32(bias[i]);
@@ -35,7 +37,7 @@ static void matrix_mul_vec_bias_fp32_naive(float *out, const float *a, const T *
 
 template <typename T>
 static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
-  std::uint32_t num_threads = std::thread::hardware_concurrency();
+  std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
   if (num_threads == 0)
     num_threads = 4;
 
@@ -57,7 +59,7 @@ static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const T *b,
 template <typename T>
 static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const T *b, const T *bias, std::size_t m,
                                               std::size_t n) {
-  std::uint32_t num_threads = std::thread::hardware_concurrency();
+  std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
   if (num_threads == 0)
     num_threads = 4;
 
