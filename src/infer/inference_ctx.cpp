@@ -9,19 +9,18 @@ InferenceCtx::InferenceCtx(Model &model_, std::size_t kv_size, DataType kv_dtype
     : model(model_), config(model.config), kv_size(kv_size), kv_dtype(kv_dtype) {
   x = alloc.alloc(DataType::F32, config.hidden_size);
   xb = alloc.alloc(DataType::F32, config.hidden_size);
-  xb2 = alloc.alloc(DataType::F32, config.hidden_size);
+  xb2 = alloc.alloc(DataType::F32, config.num_attention_heads, config.head_dim);
   hb = alloc.alloc(DataType::F32, config.intermediate_size);
   hb2 = alloc.alloc(DataType::F32, config.intermediate_size);
-  const std::int32_t head_dim = config.hidden_size / config.num_attention_heads;
-  q = alloc.alloc(DataType::F32, config.num_attention_heads, head_dim);
-  k = alloc.alloc(DataType::F32, config.num_key_value_heads, head_dim);
-  v = alloc.alloc(DataType::F32, config.num_key_value_heads, head_dim);
+  q = alloc.alloc(DataType::F32, config.num_attention_heads, config.head_dim);
+  k = alloc.alloc(DataType::F32, config.num_key_value_heads, config.head_dim);
+  v = alloc.alloc(DataType::F32, config.num_key_value_heads, config.head_dim);
 
   k_cache.resize(config.num_hidden_layers);
   v_cache.resize(config.num_hidden_layers);
   for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    k_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, head_dim);
-    v_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, head_dim);
+    k_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
+    v_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
   }
   attn = alloc.alloc(DataType::F32, config.num_attention_heads, kv_size);
 
@@ -76,11 +75,12 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   _rms_norm(xb.as<float>(), x.as<float>(), block.input_norm, config.hidden_size, config.rms_norm_eps);
 
   // 2. Self-attention
-  const std::int32_t head_dim = config.hidden_size / config.num_attention_heads;
-  std::int32_t q_dim = config.num_attention_heads * head_dim;
-  std::int32_t kv_dim = config.num_key_value_heads * head_dim;
+  const std::int32_t head_dim = config.head_dim;
+  const std::int32_t q_dim = config.num_attention_heads * head_dim;
+  const std::int32_t kv_dim = config.num_key_value_heads * head_dim;
 
   const bool has_qkv_bias = !block.attn_k_bias.data.empty();
+  const bool has_qk_norm = !block.attn_q_norm.data.empty();
 
   if (has_qkv_bias) {
     _matrix_mul_vec_bias(q.as<float>(), xb.as<float>(), block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
@@ -90,6 +90,17 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
     _matrix_mul_vec(q.as<float>(), xb.as<float>(), block.attn_q, config.hidden_size, q_dim);
     _matrix_mul_vec(k.as<float>(), xb.as<float>(), block.attn_k, config.hidden_size, kv_dim);
     _matrix_mul_vec(v.as<float>(), xb.as<float>(), block.attn_v, config.hidden_size, kv_dim);
+  }
+
+  if (has_qk_norm) {
+    for (std::size_t h = 0; h < config.num_attention_heads; ++h) {
+      float *qh = q.as<float>() + h * head_dim;
+      _rms_norm(qh, qh, block.attn_q_norm, head_dim, config.rms_norm_eps);
+    }
+    for (std::size_t h = 0; h < config.num_key_value_heads; ++h) {
+      float *kh = k.as<float>() + h * head_dim;
+      _rms_norm(kh, kh, block.attn_k_norm, head_dim, config.rms_norm_eps);
+    }
   }
 
   for (std::size_t h = 0; h < config.num_attention_heads; ++h) {
@@ -144,10 +155,10 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
   }
 
   // 4. Combine attention outputs
-  _matrix_mul_vec(hb.as<float>(), xb2.as<float>(), block.attn_o, q_dim, config.hidden_size);
+  _matrix_mul_vec(xb.as<float>(), xb2.as<float>(), block.attn_o, q_dim, config.hidden_size);
 
   for (std::int32_t i = 0; i < config.hidden_size; ++i) {
-    x.as<float>()[i] += hb.as<float>()[i];
+    x.as<float>()[i] += xb.as<float>()[i];
   }
 
   // 5. Layer normalization on output

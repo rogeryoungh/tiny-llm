@@ -46,6 +46,11 @@ void Model::load_weights() {
       block.attn_k_bias = _create_tensor(std::format("model.layers.{}.self_attn.k_proj.bias", i));
       block.attn_v_bias = _create_tensor(std::format("model.layers.{}.self_attn.v_proj.bias", i));
     }
+
+    if (config.model_type == "qwen3") {
+      block.attn_q_norm = _create_tensor(std::format("model.layers.{}.self_attn.q_norm.weight", i));
+      block.attn_k_norm = _create_tensor(std::format("model.layers.{}.self_attn.k_norm.weight", i));
+    }
   }
 
   if (config.tie_word_embeddings) {
@@ -70,6 +75,9 @@ Model::~Model() {
     alloc.dealloc(block.attn_q_bias);
     alloc.dealloc(block.attn_k_bias);
     alloc.dealloc(block.attn_v_bias);
+
+    alloc.dealloc(block.attn_q_norm);
+    alloc.dealloc(block.attn_k_norm);
   }
   alloc.dealloc(weight.embed);
   if (!config.tie_word_embeddings) {

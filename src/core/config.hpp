@@ -19,6 +19,7 @@ struct Config {
   std::int32_t num_key_value_heads;
   std::int32_t num_hidden_layers;
   std::int32_t num_attention_heads;
+  std::int32_t head_dim;
   float rope_theta;
   float rms_norm_eps;
 
