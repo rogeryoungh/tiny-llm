@@ -92,8 +92,12 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
     _matrix_mul_vec(v.as<float>(), xb.as<float>(), block.attn_v, config.hidden_size, kv_dim);
   }
 
-  rope_inplace_fp32(q.as<float>(), q_dim, head_dim, pos, config.rope_theta, head_dim);
-  rope_inplace_fp32(k.as<float>(), kv_dim, head_dim, pos, config.rope_theta, head_dim);
+  for (std::size_t h = 0; h < config.num_attention_heads; ++h) {
+    rope_inplace_fp32(q.as<float>() + h * head_dim, head_dim, pos, config.rope_theta);
+  }
+  for (std::size_t h = 0; h < config.num_key_value_heads; ++h) {
+    rope_inplace_fp32(k.as<float>() + h * head_dim, head_dim, pos, config.rope_theta);
+  }
 
   if (kv_dtype == DataType::BF16) {
     copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + kv_pos * kv_dim);
@@ -110,7 +114,9 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
       std::copy_n(kc.as<float>() + r * kv_dim, kv_dim, k.as<float>());
     }
 
-    rope_inplace_fp32(k.as<float>(), kv_dim, head_dim, 1, config.rope_theta, head_dim);
+    for (std::size_t h = 0; h < config.num_attention_heads; ++h) {
+      rope_inplace_fp32(k.as<float>() + h * head_dim, head_dim, r + kv_sink, config.rope_theta);
+    }
 
     if (kv_dtype == DataType::BF16) {
       copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + r * kv_dim);

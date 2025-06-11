@@ -25,8 +25,7 @@ void matrix_mul_vec_fp32_b_bf16(float *out, const float *a, const std::uint16_t 
 void matrix_mul_vec_bias_fp32_b_bf16(float *out, const float *a, const std::uint16_t *b, const std::uint16_t *bias, std::size_t m,
                               std::size_t n);
 
-void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_t pos, float theta,
-                       std::size_t rotary_dim);
+void rope_inplace_fp32(float *x, std::size_t head_dim, std::size_t pos, float theta);
 
 void attention_softmax_fp32(float *out, float *atth, const float *qh, const float *kh, const float *vh,
                             std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);

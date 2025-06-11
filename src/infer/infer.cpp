@@ -55,19 +55,18 @@ void matrix_mul_fp32(float *out, const float *a, const float *b, std::size_t m, 
   }
 }
 
-void rope_inplace_fp32(float *x, std::size_t d, std::size_t head_dim, std::size_t pos, float theta,
-                       std::size_t rotary_dim) {
-  for (std::size_t i = 0; i < d; i += 2) {
-    std::size_t j_head = i % head_dim;
-    float freq = j_head >= rotary_dim ? 0.f : 1.0f / std::pow(theta, (float)j_head / (float)rotary_dim);
+void rope_inplace_fp32(float *x, std::size_t head_dim, std::size_t pos, float theta) {
+  const std::size_t half_dim = head_dim / 2;
+  for (std::size_t i = 0; i < half_dim; ++i) {
+    float freq = std::pow(theta, -float(i) / half_dim);
     float val = pos * freq;
-    float fcr = std::cos(val);
-    float fci = std::sin(val);
+    float vc = std::cos(val);
+    float vs = std::sin(val);
 
     float v0 = x[i];
-    float v1 = x[i + 1];
-    x[i] = v0 * fcr - v1 * fci;
-    x[i + 1] = v0 * fci + v1 * fcr;
+    float v1 = x[i + half_dim];
+    x[i] = v0 * vc - v1 * vs;
+    x[i + half_dim] = v0 * vs + v1 * vc;
   }
 }
 
