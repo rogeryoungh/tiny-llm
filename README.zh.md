@@ -1,37 +1,36 @@
 # Tiny LLM
 
-一个使用 C++ 实现的大模型推理引擎，目前支持基本的中文（UTF-8）输入。
+一个使用 C++ 实现的大模型推理引擎，支持中文（UTF-8）输入。
 
 > [!WARNING]
-> 尚在测试中。
+> 🚧 项目仍在持续开发中。
 
 ## 特性
 
 - 主要使用 C++ 实现
-- 支持 UTF-8 编码，适用于中文文本（功能仍在完善）
+- 支持 Huggingface 的 safetensors 格式
+- 支持 UTF-8 编码，适合中文场景
+- 已在 [Qwen/Qwen2.5-3B](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/)、[Qwen3-4B](https://huggingface.co/Qwen/Qwen2.5-3B/) 和 [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B/) 等模型上进行测试
+- 支持模型权重以 bf16 或 fp32 格式加载
 
 ## 当前限制
 
-- 仅测试 Mistral-7B-Instruct-v0.2
-- 仅实现了 fp32 精度
-- 仅支持 CPU
+- 仅支持 CPU 推理
 
 ## 使用
 
-当前仅在 [Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/) 上测试。
-
-首先下载模型和权重，然后编译运行，`bf16` 转化需要 30s 左右。
+首先下载模型和权重，然后编译运行。
 
 ```bash
-git clone git@hf.co:mistralai/Mistral-7B-Instruct-v0.2
+git clone git@hf.co:Qwen/Qwen2.5-3B
 xmake
-xmake run tiny-llm ./Mistral-7B-Instruct-v0.2
+xmake run tiny-llm ./Qwen2.5-3B
 ```
 
-使用 fp32 精度的模型需要转换，需要 python 脚本把模型转换成 fp32（暂不支持其他精度）。
+如需将模型权重转换为 fp32 或 bf16，可使用提供的 Python 脚本：
 
 ```bash
 uv init # 安装依赖
-uv run scripts/convert.py --src ./Mistral-7B-Instruct-v0.2/ --dst ./Mistral-7B-Instruct-v0.2-fp32 --dtype fp32
-xmake run tiny-llm ./Mistral-7B-Instruct-v0.2-fp32
+uv run scripts/convert.py --src ./Qwen2.5-3B/ --dst ./Qwen2.5-3B-fp32 --dtype fp32
+xmake run tiny-llm ./Qwen2.5-3B-fp32
 ```
