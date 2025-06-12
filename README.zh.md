@@ -11,7 +11,7 @@
 - 支持 Huggingface 的 safetensors 格式
 - 支持 UTF-8 编码，适合中文场景
 - 已在 [Qwen/Qwen2.5-3B](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/)、[Qwen3-4B](https://huggingface.co/Qwen/Qwen2.5-3B/) 和 [mistralai/Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) 等模型上进行测试
-- 支持模型权重以 bf16 或 fp32 格式加载
+- 支持模型权重以 bf16、fp16 或 fp32 格式加载
 
 ## 当前限制
 
@@ -27,10 +27,10 @@ xmake
 xmake run tiny-llm ./Qwen2.5-3B
 ```
 
-如需将模型权重转换为 fp32 或 bf16，可使用提供的 Python 脚本：
+如需将模型权重转换为 bf16、fp16 或 fp32，可使用提供的 Python 脚本：
 
 ```bash
 uv init # 安装依赖
-uv run scripts/convert.py --src ./Qwen2.5-3B/ --dst ./Qwen2.5-3B-fp32 --dtype fp32
-xmake run tiny-llm ./Qwen2.5-3B-fp32
+uv run scripts/convert.py --src ./Qwen2.5-3B/ --dst ./Qwen2.5-3B-fp16 --dtype fp16
+xmake run tiny-llm ./Qwen2.5-3B-fp16
 ```
