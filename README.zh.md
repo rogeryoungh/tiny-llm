@@ -10,7 +10,7 @@
 - 主要使用 C++ 实现
 - 支持 Huggingface 的 safetensors 格式
 - 支持 UTF-8 编码，适合中文场景
-- 已在 [Qwen/Qwen2.5-3B](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/)、[Qwen3-4B](https://huggingface.co/Qwen/Qwen2.5-3B/) 和 [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B/) 等模型上进行测试
+- 已在 [Qwen/Qwen2.5-3B](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/)、[Qwen3-4B](https://huggingface.co/Qwen/Qwen2.5-3B/) 和 [mistralai/Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2) 等模型上进行测试
 - 支持模型权重以 bf16 或 fp32 格式加载
 
 ## 当前限制
