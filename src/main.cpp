@@ -43,9 +43,9 @@ int main(int argc, char *argv[]) {
 
   std::cout << "[DEBUG] Weight memory usage: " << (model.alloc.total_allocated >> 20) << " MB" << std::endl;
 
-  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DataType::BF16);
+  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::CPU, tinyllm::DataType::BF16);
 
-  std::cout << "[DEBUG] Inference memory usage: " << (ctx.alloc.total_allocated >> 20) << " MB" << std::endl;
+  // std::cout << "[DEBUG] Inference memory usage: " << (ctx.alloc.total_allocated >> 20) << " MB" << std::endl;
 
   // ctx.forward(model, 0, 0);
   std::cout << "[DEBUG] Forwarding prompt ..." << std::endl;

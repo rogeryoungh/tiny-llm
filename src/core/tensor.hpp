@@ -11,6 +11,8 @@ namespace tinyllm {
 
 enum class DataType { F32, BF16, F16 };
 
+enum class DeviceType { CPU, GPU };
+
 std::string dtype_to_string(DataType dtype);
 
 std::size_t dtype_size(DataType dtype);
