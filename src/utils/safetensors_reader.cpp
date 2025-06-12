@@ -56,16 +56,15 @@ void SafeTensorsReader::load_metadata(const std::filesystem::path &path, ArenaAl
   std::sort(metadata_raw.begin(), metadata_raw.end(),
             [](const MetadataRaw &a, const MetadataRaw &b) { return a.start < b.start; });
 
+  std::span<std::byte> data = alloc.alloc(tensor_size - metadata_size - 8);
+  is.seekg(metadata_size + 8);
+  is.read(reinterpret_cast<char *>(data.data()), data.size());
+  if (is.eof() || is.fail()) {
+    throw std::runtime_error("Failed to read metadata from " + path.string());
+  }
+
   for (const auto &d : metadata_raw) {
-    std::span<std::byte> data_span = alloc.alloc(d.end - d.start);
-
-    is.seekg(d.start + metadata_size + 8);
-    is.read(reinterpret_cast<char *>(data_span.data()), data_span.size());
-
-    if (is.eof() || is.fail()) {
-      throw std::runtime_error("Failed to read tensor data for " + d.name);
-    }
-
+    std::span<std::byte> data_span = data.subspan(d.start, d.end - d.start);
     metadata[d.name] = Metadata{d.dtype, d.shape, data_span};
   }
 }
