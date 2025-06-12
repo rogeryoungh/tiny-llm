@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../inference_ctx.hpp"
 #include "../../core/config.hpp"
 #include "../../core/model.hpp"
 #include "../../core/tensor.hpp"
+#include "../inference_ctx.hpp"
 
 namespace tinyllm {
 
@@ -23,11 +23,13 @@ struct InferenceBackendCPU : InferenceBackend {
   void forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
                      std::int32_t kv_pos, std::int32_t kv_len);
 
-  void forward(std::int32_t token, std::int32_t pos);
+  void forward(std::int32_t token, std::int32_t pos) override;
 
-  void forward_prefill(std::int32_t token, std::int32_t pos);
+  void forward_prefill(std::int32_t token, std::int32_t pos) override;
 
-  std::uint32_t argmax() const;
+  std::uint32_t argmax() const override;
+
+  std::size_t memory_usage() const override;
 
 protected:
   void _rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps);

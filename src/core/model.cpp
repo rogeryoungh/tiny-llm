@@ -3,6 +3,7 @@
 #include "../utils/safetensors_reader.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <format>
 
 namespace tinyllm {
@@ -122,5 +123,7 @@ void Model::to_dtype(DataType new_dtype) {
   }
   dtype = new_dtype;
 }
+
+std::size_t Model::memory_usage() const { return alloc.total_allocated; }
 
 } // namespace tinyllm

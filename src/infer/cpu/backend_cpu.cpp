@@ -218,4 +218,6 @@ std::uint32_t InferenceBackendCPU::argmax() const {
                        std::max_element(logits.as<float>(), logits.as<float>() + config.vocab_size));
 }
 
+std::size_t InferenceBackendCPU::memory_usage() const { return alloc.total_allocated; }
+
 } // namespace tinyllm

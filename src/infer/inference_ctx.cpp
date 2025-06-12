@@ -17,4 +17,6 @@ void InferenceCtx::forward_prefill(std::int32_t token, std::int32_t pos) { backe
 
 std::uint32_t InferenceCtx::argmax() const { return backend->argmax(); }
 
+std::size_t InferenceCtx::memory_usage() const { return backend->memory_usage(); }
+
 } // namespace tinyllm

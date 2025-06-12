@@ -30,8 +30,11 @@ struct Tokenizer {
 
   std::vector<std::int32_t> encode(const std::string &text);
 
+  std::size_t memory_usage() const;
+
   std::string _debug_decode(const std::vector<std::int32_t> &tokens);
 
+protected:
   void _add_token(const std::string &key, std::int32_t token_id);
 };
 

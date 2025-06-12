@@ -150,4 +150,20 @@ std::string Tokenizer::_debug_decode(const std::vector<std::int32_t> &tokens) {
   return decoded;
 }
 
+std::size_t Tokenizer::memory_usage() const {
+  std::size_t size = sizeof(Tokenizer) + vocab.size() * sizeof(std::string);
+  for (const auto &word : vocab) {
+    size += word.capacity();
+  }
+  auto dfs_trie = [](auto &&self, const TokenizerTrieNode &node) -> std::size_t {
+    std::size_t size = sizeof(TokenizerTrieNode);
+    for (const auto &c : node.children) {
+      size += self(self, c);
+    }
+    return size;
+  };
+  size += dfs_trie(dfs_trie, root);
+  return size;
+}
+
 } // namespace tinyllm

@@ -32,20 +32,21 @@ int main(int argc, char *argv[]) {
   model.load_weights();
   std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
+  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::CPU, tinyllm::DataType::BF16);
+
+  std::cout << "[DEBUG] Weight memory usage: " << (model.memory_usage() >> 20) << " MB" << std::endl;
+  std::cout << "[DEBUG] Inference memory usage: " << (ctx.memory_usage() >> 20) << " MB" << std::endl;
+  std::cout << "[DEBUG] Tokenizer memory usage: " << (tokenizer.memory_usage() >> 20) << " MB" << std::endl;
+
   std::cout << ">>> " << std::flush;
 
   std::string text = "";
   // std::cin >> text;
   std::getline(std::cin, text);
+
   const auto tokens = tokenizer.encode(text);
   std::cout << "[DEBUG] Encoded tokens: " << tokens << std::endl;
   std::cout << "[DEBUG] Decoded text: " << tokenizer._debug_decode(tokens) << std::endl;
-
-  std::cout << "[DEBUG] Weight memory usage: " << (model.alloc.total_allocated >> 20) << " MB" << std::endl;
-
-  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::CPU, tinyllm::DataType::BF16);
-
-  // std::cout << "[DEBUG] Inference memory usage: " << (ctx.alloc.total_allocated >> 20) << " MB" << std::endl;
 
   // ctx.forward(model, 0, 0);
   std::cout << "[DEBUG] Forwarding prompt ..." << std::endl;

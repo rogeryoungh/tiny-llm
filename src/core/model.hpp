@@ -34,6 +34,8 @@ struct Model {
   void to_dtype(DataType new_dtype);
 
   void load_weights();
+
+  std::size_t memory_usage() const;
 };
 
 } // namespace tinyllm
