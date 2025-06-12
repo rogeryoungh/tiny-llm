@@ -29,7 +29,7 @@ struct Model {
 
   ModelWeights weight;
 
-  Model(Config &cfg, DataType dtype = DataType::BF16);
+  Model(Config &cfg);
 
   void to_dtype(DataType new_dtype);
 

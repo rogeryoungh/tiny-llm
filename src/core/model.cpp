@@ -7,7 +7,7 @@
 
 namespace tinyllm {
 
-Model::Model(Config &cfg, DataType dtype) : config(cfg), dtype(dtype) {}
+Model::Model(Config &cfg) : config(cfg) {}
 
 void Model::load_weights() {
   SafeTensorsReader reader(config.model_path, alloc);
@@ -20,6 +20,8 @@ void Model::load_weights() {
 
   weight.embed = get_tensor("model.embed_tokens.weight");
   weight.norm = get_tensor("model.norm.weight");
+
+  dtype = weight.embed.dtype;
 
   weight.blocks.resize(config.num_hidden_layers);
 
@@ -52,8 +54,6 @@ void Model::load_weights() {
   } else {
     weight.lm_head = get_tensor("lm_head.weight");
   }
-
-  to_dtype(dtype);
 }
 
 void Model::to_dtype(DataType new_dtype) {

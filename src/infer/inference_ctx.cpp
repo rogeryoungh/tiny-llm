@@ -2,7 +2,6 @@
 #include "../utils/precision.hpp"
 #include "infer.hpp"
 #include <cstddef>
-#include <iostream>
 
 namespace tinyllm {
 

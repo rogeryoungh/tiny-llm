@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
   std::cout << std::format("[DEBUG] Tokenizer loaded in {:3f} ms.", tokenizer_load_timer.elapsed_ms()) << std::endl;
 
   tinyllm::Stopwatch model_load_timer;
-  tinyllm::Model model(config, tinyllm::DataType::BF16);
+  tinyllm::Model model(config);
   model.load_weights();
   std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
