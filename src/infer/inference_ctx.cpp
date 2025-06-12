@@ -125,8 +125,8 @@ void InferenceCtx::forward_block(const Block &block, Tensor &kc, Tensor &vc, std
       std::copy_n(kc.as<float>() + r * kv_dim, kv_dim, k.as<float>());
     }
 
-    for (std::size_t h = 0; h < config.num_attention_heads; ++h) {
-      rope_inplace_fp32(k.as<float>() + h * head_dim, head_dim, r + kv_sink, config.rope_theta);
+    for (std::size_t h = 0; h < config.num_key_value_heads; ++h) {
+      rope_inplace_fp32(k.as<float>() + h * head_dim, head_dim, 1, config.rope_theta);
     }
 
     if (kv_dtype == DataType::BF16) {
