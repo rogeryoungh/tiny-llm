@@ -10,7 +10,7 @@ template <typename T>
 static void matrix_mul_vec_fp32_naive(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0.0f;
-    const T* b0 = b + i * m;
+    const T *b0 = b + i * m;
     for (std::size_t j = 0; j < m; ++j) {
       auto aj = a[j];
       auto bj = _cvt_to_fp32(b0[j]);
@@ -25,7 +25,7 @@ static void matrix_mul_vec_bias_fp32_naive(float *out, const float *a, const T *
                                            std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0;
-    const T* b0 = b + i * m;
+    const T *b0 = b + i * m;
     for (std::size_t j = 0; j < m; ++j) {
       auto aj = a[j];
       auto bj = _cvt_to_fp32(b0[j]);

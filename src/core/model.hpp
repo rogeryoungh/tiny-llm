@@ -24,14 +24,14 @@ struct ModelWeights {
 
 struct Model {
   Config &config;
-  TensorAlloc alloc;
+  ArenaAlloc alloc;
   DataType dtype;
 
   ModelWeights weight;
 
-  Model(Config &cfg, DataType dtype = DataType::F32);
+  Model(Config &cfg, DataType dtype = DataType::BF16);
 
-  ~Model();
+  void to_dtype(DataType new_dtype);
 
   void load_weights();
 };

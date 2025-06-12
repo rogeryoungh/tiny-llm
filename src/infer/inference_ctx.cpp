@@ -2,46 +2,30 @@
 #include "../utils/precision.hpp"
 #include "infer.hpp"
 #include <cstddef>
+#include <iostream>
 
 namespace tinyllm {
 
 InferenceCtx::InferenceCtx(Model &model_, std::size_t kv_size, DataType kv_dtype)
     : model(model_), config(model.config), kv_size(kv_size), kv_dtype(kv_dtype) {
-  x = alloc.alloc(DataType::F32, config.hidden_size);
-  xb = alloc.alloc(DataType::F32, config.hidden_size);
-  xb2 = alloc.alloc(DataType::F32, config.num_attention_heads, config.head_dim);
-  hb = alloc.alloc(DataType::F32, config.intermediate_size);
-  hb2 = alloc.alloc(DataType::F32, config.intermediate_size);
-  q = alloc.alloc(DataType::F32, config.num_attention_heads, config.head_dim);
-  k = alloc.alloc(DataType::F32, config.num_key_value_heads, config.head_dim);
-  v = alloc.alloc(DataType::F32, config.num_key_value_heads, config.head_dim);
+  x = Tensor::alloc(alloc, DataType::F32, config.hidden_size);
+  xb = Tensor::alloc(alloc, DataType::F32, config.hidden_size);
+  xb2 = Tensor::alloc(alloc, DataType::F32, config.num_attention_heads, config.head_dim);
+  hb = Tensor::alloc(alloc, DataType::F32, config.intermediate_size);
+  hb2 = Tensor::alloc(alloc, DataType::F32, config.intermediate_size);
+  q = Tensor::alloc(alloc, DataType::F32, config.num_attention_heads, config.head_dim);
+  k = Tensor::alloc(alloc, DataType::F32, config.num_key_value_heads, config.head_dim);
+  v = Tensor::alloc(alloc, DataType::F32, config.num_key_value_heads, config.head_dim);
 
   k_cache.resize(config.num_hidden_layers);
   v_cache.resize(config.num_hidden_layers);
   for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    k_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
-    v_cache[i] = alloc.alloc(kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
+    k_cache[i] = Tensor::alloc(alloc, kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
+    v_cache[i] = Tensor::alloc(alloc, kv_dtype, config.num_key_value_heads, kv_size, config.head_dim);
   }
-  attn = alloc.alloc(DataType::F32, config.num_attention_heads, kv_size);
+  attn = Tensor::alloc(alloc, DataType::F32, config.num_attention_heads, kv_size);
 
-  logits = alloc.alloc(DataType::F32, config.vocab_size);
-}
-
-InferenceCtx::~InferenceCtx() {
-  alloc.dealloc(x);
-  alloc.dealloc(xb);
-  alloc.dealloc(xb2);
-  alloc.dealloc(hb);
-  alloc.dealloc(hb2);
-  alloc.dealloc(q);
-  alloc.dealloc(k);
-  alloc.dealloc(v);
-  for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    alloc.dealloc(k_cache[i]);
-    alloc.dealloc(v_cache[i]);
-  }
-  alloc.dealloc(attn);
-  alloc.dealloc(logits);
+  logits = Tensor::alloc(alloc, DataType::F32, config.vocab_size);
 }
 
 void InferenceCtx::_rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps) {

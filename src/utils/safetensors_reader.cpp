@@ -1,6 +1,6 @@
 #include "safetensors_reader.hpp"
-#include "precision.hpp"
 
+#include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 
@@ -8,92 +8,95 @@ namespace tinyllm {
 
 namespace fs = std::filesystem;
 
-void SafeTensorsReader::_load_metadata(const std::string &file_name) {
+struct MetadataRaw {
+  std::string name, dtype;
+  std::int64_t start, end;
+  std::array<std::int32_t, 4> shape;
+};
+
+void SafeTensorsReader::load_metadata(const std::filesystem::path &path, ArenaAlloc &alloc) {
   std::uint64_t metadata_size = 0;
-  std::ifstream is(config_path / file_name, std::ios::binary);
-  std::cout << "Loading metadata from: " << (config_path / file_name).string() << ", size "
-            << fs::file_size(config_path / file_name) << " bytes" << std::endl;
+
+  std::ifstream is(path, std::ios::binary);
+  std::size_t tensor_size = fs::file_size(path);
   is.read(reinterpret_cast<char *>(&metadata_size), sizeof(metadata_size));
+
   std::vector<char> v(metadata_size);
   is.read(v.data(), v.size());
-  const auto metadata = nlohmann::json::parse(v);
-  for (const auto &[name, tensor_info] : metadata.items()) {
+
+  std::cout << "[DEBUG] Loading metadata from: " << path << ", size " << (tensor_size >> 20) << " MB" << std::endl;
+
+  const auto metadata_json = nlohmann::json::parse(v);
+
+  std::vector<MetadataRaw> metadata_raw;
+
+  for (const auto &[name, tensor_info] : metadata_json.items()) {
     if (name == "__metadata__")
       continue;
-    auto dtype = tensor_info.at("dtype").get<std::string>();
     auto data_offsets = tensor_info.at("data_offsets").get<std::vector<std::int64_t>>();
-    auto shape = tensor_info.at("shape").get<std::vector<std::int64_t>>();
+    auto shape = tensor_info.at("shape").get<std::vector<std::int32_t>>();
 
-    for (auto &offset : data_offsets) {
-      offset += metadata_size + 8;
-    }
-
-    file_names[name] = file_name;
-    data[name] = Metadata{dtype, std::move(data_offsets), std::move(shape)};
-  }
-  files[file_name] = std::move(is);
-}
-
-SafeTensorsReader::SafeTensorsReader(const fs::path &path) : config_path(path) {
-  fs::path index_path = config_path / "model.safetensors.index.json";
-  if (!fs::exists(index_path)) {
-    _load_metadata(config_path / "model.safetensors");
-    return;
-  }
-
-  std::ifstream index_file(index_path);
-
-  nlohmann::json index_json;
-  index_file >> index_json;
-
-  for (const auto &[tensor_name, tensor_file] : index_json.at("weight_map").items()) {
-    const auto file_name = tensor_file.get<std::string>();
-    if (files.contains(file_name))
-      continue;
-    _load_metadata(file_name);
-  }
-}
-
-std::vector<std::string> SafeTensorsReader::get_tensor_names() const {
-  std::vector<std::string> names;
-  names.reserve(data.size());
-  for (const auto &[name, _] : data) {
-    names.push_back(name);
-  }
-  return names;
-}
-
-SafeTensorsReader::Metadata SafeTensorsReader::get_tensor_meta(const std::string &name) const {
-  const auto &metadata = data.at(name);
-  return metadata;
-}
-
-void SafeTensorsReader::load_tensor(const std::string &name, std::span<std::byte> span, DataType type) {
-  const auto &metadata = data.at(name);
-  auto &file = files.at(file_names.at(name));
-
-  std::size_t begin = metadata.data_offsets[0];
-  std::size_t end = metadata.data_offsets[1];
-
-  file.seekg(begin);
-  if (!file) {
-    throw std::runtime_error("Failed to seek to tensor data for " + name);
-  }
-  auto meta_dtype = string_to_dtype(metadata.dtype);
-  if (type == meta_dtype) {
-    file.read(reinterpret_cast<char *>(span.data()), end - begin);
-  } else {
-    if (type == DataType::F32 && meta_dtype == DataType::BF16) {
-      assert(span.size() == (end - begin) * 2);
-      auto *half_ptr = reinterpret_cast<char *>(span.data() + span.size() / 2);
-      auto *fp32_ptr = reinterpret_cast<std::uint32_t *>(span.data());
-      file.read(half_ptr, end - begin);
-      convert_bf16_to_fp32_inplace(span);
+    std::array<std::int32_t, 4> shape_array{1, 1, 1, 1};
+    if (shape.size() > 4 || shape.size() < 1) {
+      throw std::runtime_error("Invalid tensor shape for " + name);
     } else {
-      throw std::runtime_error("Unsupported data type conversion from " + metadata.dtype + " to " +
-                               dtype_to_string(type));
+      std::copy(shape.rbegin(), shape.rend(), shape_array.begin());
     }
+
+    MetadataRaw raw;
+    raw.name = name;
+    raw.dtype = tensor_info.at("dtype").get<std::string>();
+    raw.start = data_offsets.at(0);
+    raw.end = data_offsets.at(1);
+    raw.shape = shape_array;
+
+    metadata_raw.emplace_back(raw);
+  }
+
+  std::sort(metadata_raw.begin(), metadata_raw.end(),
+            [](const MetadataRaw &a, const MetadataRaw &b) { return a.start < b.start; });
+
+  for (const auto &d : metadata_raw) {
+    std::span<std::byte> data_span = alloc.alloc(d.end - d.start);
+
+    is.seekg(d.start + metadata_size + 8);
+    is.read(reinterpret_cast<char *>(data_span.data()), data_span.size());
+
+    if (is.eof() || is.fail()) {
+      throw std::runtime_error("Failed to read tensor data for " + d.name);
+    }
+
+    metadata[d.name] = Metadata{d.dtype, d.shape, data_span};
   }
 }
+
+SafeTensorsReader::SafeTensorsReader(const std::filesystem::path &path, ArenaAlloc &alloc) {
+  fs::path index_path = path / "model.safetensors.index.json";
+
+  std::vector<std::string> files;
+
+  if (fs::exists(index_path)) {
+
+    std::ifstream index_file(index_path);
+
+    nlohmann::json index_json;
+    index_file >> index_json;
+
+    for (const auto &[tensor_name, file_name] : index_json.at("weight_map").items()) {
+      files.emplace_back(file_name.get<std::string>());
+    }
+  } else {
+    files.emplace_back("model.safetensors");
+  }
+
+  std::sort(files.begin(), files.end());
+  files.erase(std::unique(files.begin(), files.end()), files.end());
+
+  for (const auto &file_name : files) {
+    load_metadata(path / file_name, alloc);
+  }
+}
+
+SafeTensorsReader::Metadata SafeTensorsReader::get_metadata(const std::string &name) const { return metadata.at(name); }
 
 } // namespace tinyllm

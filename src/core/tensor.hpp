@@ -1,7 +1,8 @@
 #pragma once
 
+#include "../utils/arena_alloc.hpp"
+
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -26,21 +27,11 @@ struct Tensor {
   template <typename T> const T *as() const { return reinterpret_cast<const T *>(data.data()); }
 
   template <typename T> const T *const_as() const { return reinterpret_cast<const T *>(data.data()); }
-};
 
-struct TensorAlloc {
-  std::size_t total_allocated = 0;
-  std::size_t allocated_size = 0;
+  static Tensor alloc(ArenaAlloc &a, DataType dtype, const std::array<std::int32_t, 4> &shape);
 
-  std::span<std::byte> alloc(std::size_t size);
-
-  void dealloc(std::span<std::byte> span);
-
-  void dealloc(Tensor &tensor);
-
-  Tensor alloc(DataType dtype, std::array<std::int32_t, 4> shape);
-
-  Tensor alloc(DataType dtype, std::int32_t s0, std::int32_t s1 = 1, std::int32_t s2 = 1, std::int32_t s3 = 1);
+  static Tensor alloc(ArenaAlloc &a, DataType dtype, std::int32_t d0, std::int32_t d1 = 1, std::int32_t d2 = 1,
+                      std::int32_t d3 = 1);
 };
 
 } // namespace tinyllm

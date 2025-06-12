@@ -9,7 +9,7 @@ namespace tinyllm {
 struct InferenceCtx {
   const Model &model;
   Config &config;
-  TensorAlloc alloc;
+  ArenaAlloc alloc;
   std::size_t kv_size;
 
   DataType kv_dtype;
@@ -18,7 +18,6 @@ struct InferenceCtx {
   std::vector<Tensor> k_cache, v_cache;
 
   InferenceCtx(Model &model, std::size_t kv_size, DataType kv_dtype = DataType::F32);
-  ~InferenceCtx();
 
   void forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
                      std::int32_t kv_pos, std::int32_t kv_len);
