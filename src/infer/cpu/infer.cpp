@@ -1,5 +1,5 @@
 #include "infer.hpp"
-#include "../utils/precision.hpp"
+#include "../../utils/precision.hpp"
 
 namespace tinyllm {
 

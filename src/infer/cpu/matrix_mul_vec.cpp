@@ -1,4 +1,4 @@
-#include "../utils/precision.hpp"
+#include "../../utils/precision.hpp"
 #include "infer.hpp"
 
 #include <thread>

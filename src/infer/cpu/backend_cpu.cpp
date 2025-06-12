@@ -1,6 +1,6 @@
 #include "backend_cpu.hpp"
 #include "../../utils/precision.hpp"
-#include "../infer.hpp"
+#include "infer.hpp"
 #include <cstddef>
 
 namespace tinyllm {
