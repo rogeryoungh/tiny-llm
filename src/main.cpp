@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
   model.load_weights();
   std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
-  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::CPU, tinyllm::DataType::BF16);
+  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::CPU, tinyllm::DataType::F16);
 
   std::cout << "[DEBUG] Weight memory usage: " << (model.memory_usage() >> 20) << " MB" << std::endl;
   std::cout << "[DEBUG] Inference memory usage: " << (ctx.memory_usage() >> 20) << " MB" << std::endl;

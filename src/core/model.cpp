@@ -72,13 +72,13 @@ void Model::to_dtype(DataType new_dtype) {
     }
     auto tensor2 = Tensor::alloc(other_alloc, new_dtype, tensor.shape);
     if (tensor.dtype == DataType::F32 && new_dtype == DataType::BF16) {
-      auto *data_ptr = reinterpret_cast<std::uint16_t *>(tensor2.data.data());
+      auto *data_ptr = reinterpret_cast<bf16_t *>(tensor2.data.data());
       copy_fp32_to_bf16_n(tensor.as<float>(), tensor.data.size() / sizeof(float), data_ptr);
       tensor.data = tensor2.data;
       tensor.dtype = DataType::BF16;
     } else if (tensor.dtype == DataType::BF16 && new_dtype == DataType::F32) {
       auto *data_ptr = reinterpret_cast<float *>(tensor.data.data());
-      copy_bf16_to_fp32_n(tensor.as<std::uint16_t>(), tensor.data.size() / sizeof(std::uint16_t), data_ptr);
+      copy_bf16_to_fp32_n(tensor.as<bf16_t>(), tensor.data.size() / sizeof(bf16_t), data_ptr);
       tensor.data = tensor2.data;
       tensor.dtype = DataType::F32;
     } else {

@@ -29,7 +29,9 @@ InferenceBackendCPU::InferenceBackendCPU(Model &model_, std::size_t kv_size, Dat
 
 void InferenceBackendCPU::_rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps) {
   if (model.dtype == DataType::BF16) {
-    rms_norm_fp32_weight_bf16(out, x, weight.as<std::uint16_t>(), size, eps);
+    rms_norm_fp32_weight_bf16(out, x, weight.as<bf16_t>(), size, eps);
+  } else if (model.dtype == DataType::F16) {
+    rms_norm_fp32_weight_fp16(out, x, weight.as<fp16_t>(), size, eps);
   } else {
     rms_norm_fp32(out, x, weight.as<float>(), size, eps);
   }
@@ -38,7 +40,9 @@ void InferenceBackendCPU::_rms_norm(float *out, const float *x, const Tensor &we
 void InferenceBackendCPU::_matrix_mul_vec(float *out, const float *a, const Tensor &weight, std::size_t m,
                                           std::size_t n) {
   if (model.dtype == DataType::BF16) {
-    matrix_mul_vec_fp32_b_bf16(out, a, weight.as<std::uint16_t>(), m, n);
+    matrix_mul_vec_fp32_b_bf16(out, a, weight.as<bf16_t>(), m, n);
+  } else if (model.dtype == DataType::F16) {
+    matrix_mul_vec_fp32_b_fp16(out, a, weight.as<fp16_t>(), m, n);
   } else {
     matrix_mul_vec_fp32(out, a, weight.as<float>(), m, n);
   }
@@ -47,7 +51,9 @@ void InferenceBackendCPU::_matrix_mul_vec(float *out, const float *a, const Tens
 void InferenceBackendCPU::_matrix_mul_vec_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias,
                                                std::size_t m, std::size_t n) {
   if (model.dtype == DataType::BF16) {
-    matrix_mul_vec_bias_fp32_b_bf16(out, a, weight.as<std::uint16_t>(), bias.as<std::uint16_t>(), m, n);
+    matrix_mul_vec_bias_fp32_b_bf16(out, a, weight.as<bf16_t>(), bias.as<bf16_t>(), m, n);
+  } else if (model.dtype == DataType::F16) {
+    matrix_mul_vec_bias_fp32_b_fp16(out, a, weight.as<fp16_t>(), bias.as<fp16_t>(), m, n);
   } else {
     matrix_mul_vec_bias_fp32(out, a, weight.as<float>(), bias.as<float>(), m, n);
   }
@@ -95,8 +101,11 @@ void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &
   }
 
   if (kv_dtype == DataType::BF16) {
-    copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + kv_pos * kv_dim);
-    copy_fp32_to_bf16_n(v.as<float>(), kv_dim, vc.as<std::uint16_t>() + kv_pos * kv_dim);
+    copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<bf16_t>() + kv_pos * kv_dim);
+    copy_fp32_to_bf16_n(v.as<float>(), kv_dim, vc.as<bf16_t>() + kv_pos * kv_dim);
+  } else if (kv_dtype == DataType::F16) {
+    copy_fp32_to_fp16_n(k.as<float>(), kv_dim, kc.as<fp16_t>() + kv_pos * kv_dim);
+    copy_fp32_to_fp16_n(v.as<float>(), kv_dim, vc.as<fp16_t>() + kv_pos * kv_dim);
   } else {
     std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + kv_pos * kv_dim);
     std::copy_n(v.as<float>(), kv_dim, vc.as<float>() + kv_pos * kv_dim);
@@ -104,7 +113,9 @@ void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &
 
   for (std::size_t r = 0; r < kv_sink; ++r) {
     if (kv_dtype == DataType::BF16) {
-      copy_bf16_to_fp32_n(kc.as<std::uint16_t>() + r * kv_dim, kv_dim, k.as<float>());
+      copy_bf16_to_fp32_n(kc.as<bf16_t>() + r * kv_dim, kv_dim, k.as<float>());
+    } else if (kv_dtype == DataType::F16) {
+      copy_fp16_to_fp32_n(kc.as<fp16_t>() + r * kv_dim, kv_dim, k.as<float>());
     } else {
       std::copy_n(kc.as<float>() + r * kv_dim, kv_dim, k.as<float>());
     }
@@ -114,7 +125,9 @@ void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &
     }
 
     if (kv_dtype == DataType::BF16) {
-      copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<std::uint16_t>() + r * kv_dim);
+      copy_fp32_to_bf16_n(k.as<float>(), kv_dim, kc.as<bf16_t>() + r * kv_dim);
+    } else if (kv_dtype == DataType::F16) {
+      copy_fp32_to_fp16_n(k.as<float>(), kv_dim, kc.as<fp16_t>() + r * kv_dim);
     } else {
       std::copy_n(k.as<float>(), kv_dim, kc.as<float>() + r * kv_dim);
     }
@@ -128,9 +141,13 @@ void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &
     float *xb2h = xb2.as<float>() + h * head_dim;
     std::int32_t kv_offset = (h / q_per_head) * head_dim;
     if (kv_dtype == DataType::BF16) {
-      const std::uint16_t *kh = kc.as<std::uint16_t>() + kv_offset;
-      const std::uint16_t *vh = vc.as<std::uint16_t>() + kv_offset;
+      const bf16_t *kh = kc.as<bf16_t>() + kv_offset;
+      const bf16_t *vh = vc.as<bf16_t>() + kv_offset;
       attention_softmax_fp32_kv_bf16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
+    } else if (kv_dtype == DataType::F16) {
+      const fp16_t *kh = kc.as<fp16_t>() + kv_offset;
+      const fp16_t *vh = vc.as<fp16_t>() + kv_offset;
+      attention_softmax_fp32_kv_fp16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
     } else {
       const float *kh = kc.as<float>() + kv_offset;
       const float *vh = vc.as<float>() + kv_offset;
@@ -164,7 +181,10 @@ void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &
 void InferenceBackendCPU::forward(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
   if (model.dtype == DataType::BF16) {
-    copy_bf16_to_fp32_n(model.weight.embed.as<std::uint16_t>() + token * config.hidden_size, config.hidden_size,
+    copy_bf16_to_fp32_n(model.weight.embed.as<bf16_t>() + token * config.hidden_size, config.hidden_size,
+                        x.as<float>());
+  } else if (model.dtype == DataType::F16) {
+    copy_fp16_to_fp32_n(model.weight.embed.as<fp16_t>() + token * config.hidden_size, config.hidden_size,
                         x.as<float>());
   } else {
     std::copy_n(model.weight.embed.as<float>() + token * config.hidden_size, config.hidden_size, x.as<float>());
@@ -193,7 +213,10 @@ void InferenceBackendCPU::forward(std::int32_t token, std::int32_t pos) {
 void InferenceBackendCPU::forward_prefill(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
   if (model.dtype == DataType::BF16) {
-    copy_bf16_to_fp32_n(model.weight.embed.as<std::uint16_t>() + token * config.hidden_size, config.hidden_size,
+    copy_bf16_to_fp32_n(model.weight.embed.as<bf16_t>() + token * config.hidden_size, config.hidden_size,
+                        x.as<float>());
+  } else if (model.dtype == DataType::F16) {
+    copy_fp16_to_fp32_n(model.weight.embed.as<fp16_t>() + token * config.hidden_size, config.hidden_size,
                         x.as<float>());
   } else {
     std::copy_n(model.weight.embed.as<float>() + token * config.hidden_size, config.hidden_size, x.as<float>());

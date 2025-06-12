@@ -93,7 +93,14 @@ void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t
 #endif
 }
 
-void matrix_mul_vec_fp32_b_bf16(float *out, const float *a, const std::uint16_t *b, std::size_t m, std::size_t n) {
+void matrix_mul_vec_fp32_b_bf16(float *out, const float *a, const bf16_t *b, std::size_t m, std::size_t n) {
+#ifdef TINYLLM_USE_OPENBLAS
+  matrix_mul_vec_fp32_blas(out, a, b, m, n);
+#else
+  matrix_mul_vec_fp32_threaded(out, a, b, m, n);
+#endif
+}
+void matrix_mul_vec_fp32_b_fp16(float *out, const float *a, const fp16_t *b, std::size_t m, std::size_t n) {
 #ifdef TINYLLM_USE_OPENBLAS
   matrix_mul_vec_fp32_blas(out, a, b, m, n);
 #else
@@ -106,8 +113,13 @@ void matrix_mul_vec_bias_fp32(float *out, const float *a, const float *b, const 
   matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
-void matrix_mul_vec_bias_fp32_b_bf16(float *out, const float *a, const std::uint16_t *b, const std::uint16_t *bias,
-                                     std::size_t m, std::size_t n) {
+void matrix_mul_vec_bias_fp32_b_bf16(float *out, const float *a, const bf16_t *b, const bf16_t *bias, std::size_t m,
+                                     std::size_t n) {
+  matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
+}
+
+void matrix_mul_vec_bias_fp32_b_fp16(float *out, const float *a, const fp16_t *b, const fp16_t *bias, std::size_t m,
+                                     std::size_t n) {
   matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
