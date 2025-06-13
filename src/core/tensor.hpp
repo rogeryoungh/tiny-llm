@@ -24,6 +24,10 @@ struct Tensor {
   DataType dtype{};
   std::span<std::byte> data{};
 
+  std::size_t size_bytes() const { return data.size_bytes(); }
+
+  std::size_t size() const { return data.size() / dtype_size(dtype); }
+
   template <typename T> T *as() { return reinterpret_cast<T *>(data.data()); }
 
   template <typename T> const T *as() const { return reinterpret_cast<const T *>(data.data()); }

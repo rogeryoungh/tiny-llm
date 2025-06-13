@@ -23,5 +23,8 @@ target("tiny-llm")
 	add_vectorexts("avx", "avx2", "avx512")
 	set_languages("c++23")
 	add_files("src/**.cpp")
+	set_symbols("debug")
+	add_files("src/**.cu")
+	add_cugencodes("native")
 	-- set_policy("build.sanitizer.address", true)
 
