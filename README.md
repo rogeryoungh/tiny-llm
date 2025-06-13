@@ -10,6 +10,7 @@ A lightweight large language model inference engine implemented in C++.
 ## Feature
 
 - Written primarily in C++
+- Support inference on CPU/CUDA.
 - Supports Huggingface safetensors format
 - Supports UTF-8 input (Such as Chinese)
 - Tested with models such as [Qwen/Qwen2.5-3B](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/), [Qwen3-4B](https://huggingface.co/Qwen/Qwen2.5-3B/), [mistralai/Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)
