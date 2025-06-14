@@ -39,13 +39,7 @@ void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, co
 
 void swiglu_fp32(float *out, const float *x, const float *gate, int size);
 
-void attention_softmax_fp32_kv_fp16_1(float *out, float *atth, const float *qh, const void *kh, const void *vh,
-                                     int head_dim, int n_kv_heads, int kv_len);
-
-void attention_softmax_fp32_kv_fp16_2(float *out, float *atth, const float *qh, const void *kh, const void *vh,
-                                     int head_dim, int n_kv_heads, int kv_len);
-
-void attention_softmax_fp32_kv_fp16_3(float *out, float *atth, const float *qh, const void *kh, const void *vh,
-                                     int head_dim, int n_kv_heads, int kv_len);
+void mh_attention_fp32_kv_fp16(float *out, float *att, const float *q, const void *k, const void *v, int num_heads,
+                               int head_dim, int n_kv_heads, int kv_len);
 
 } // namespace tinyllm::cuda

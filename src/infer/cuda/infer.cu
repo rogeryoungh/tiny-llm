@@ -178,7 +178,6 @@ void swiglu_fp32(float *out, const float *x, const float *gate, int size) {
 
   swiglu_fp32_kernel<<<n_blocks, TPB>>>(out, x, gate, size);
 }
-
 __global__ void compute_raw_scores(float *atth, const float *qh, const half *kh, int head_dim, int n_kv_heads,
                                    int kv_len) {
   const int col = blockIdx.x;
@@ -246,28 +245,115 @@ __global__ void compute_weighted_sum(float *xout, const float *atth, const half 
   }
 }
 
+__global__ void mh_compute_raw_scores(float *att, const float *q, const half *k, int head_dim, int n_kv_heads,
+                                      int kv_len) {
+  const int col = blockIdx.x;
+  if (col >= kv_len)
+    return;
+
+  const int head = blockIdx.y, n_heads = gridDim.y;
+  const int q_per_head = n_heads / n_kv_heads;
+  const float *qh = q + head * head_dim;
+  float *atth = att + head * kv_len;
+  const half *kh = k + (head / q_per_head) * head_dim;
+
+  const int lane = threadIdx.x;
+  int kv_stride = n_kv_heads * head_dim;
+  const half *kh_row = kh + col * kv_stride;
+  float sum = 0.0f;
+  float scale = rsqrtf(float(head_dim));
+
+  for (int j = lane; j < head_dim; j += warpSize) {
+    sum += qh[j] * __half2float(kh_row[j]);
+  }
+
+  sum = warp_reduce_sum(sum);
+
+  if (lane == 0) {
+    atth[col] = sum * scale;
+  }
+}
+
+__global__ void mh_softmax_inplace(float *att, int kv_len) {
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  int stride = blockDim.x * gridDim.x;
+
+  int head = blockIdx.y;
+  float *atth = att + head * kv_len;
+
+  float max = -FLT_MAX;
+  for (int i = tid; i < kv_len; i += stride)
+    max = fmaxf(max, atth[i]);
+
+  max = block_reduce_max(max);
+
+  float sum = 0.0f;
+  for (int i = tid; i < kv_len; i += stride) {
+    float e = expf(atth[i] - max);
+    atth[i] = e;
+    sum += e;
+  }
+  sum = block_reduce_sum(sum);
+
+  for (int i = tid; i < kv_len; i += stride)
+    atth[i] /= sum;
+}
+
+__global__ void mh_compute_weighted_sum(float *out, const float *attn, const half *v, int head_dim, int n_kv_heads,
+                                        int kv_len) {
+  const int col = blockIdx.x;
+  if (col >= head_dim)
+    return;
+
+  const int head = blockIdx.y, n_heads = gridDim.y;
+  const int q_per_head = n_heads / n_kv_heads;
+  const float *atth = attn + head * kv_len;
+  float *xout = out + head * head_dim;
+
+  const half *vh = v + (head / q_per_head) * head_dim;
+
+  const int lane = threadIdx.x;
+  int kv_stride = n_kv_heads * head_dim;
+  const half *vh_col = vh + col;
+  float sum = 0.0f;
+
+  for (int i = lane; i < kv_len; i += warpSize) {
+    sum += atth[i] * __half2float(vh_col[i * kv_stride]);
+  }
+
+  sum = warp_reduce_sum(sum);
+
+  if (lane == 0) {
+    xout[col] = sum;
+  }
+}
+
 void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, const void *kh, const void *vh,
                                     int head_dim, int n_kv_heads, int kv_len) {
   constexpr int WARP_SIZE = 32;
 
-  {
-    compute_raw_scores<<<kv_len, WARP_SIZE>>>(atth, qh, reinterpret_cast<const half *>(kh), head_dim, n_kv_heads,
-                                              kv_len);
-  }
+  compute_raw_scores<<<kv_len, WARP_SIZE>>>(atth, qh, reinterpret_cast<const half *>(kh), head_dim, n_kv_heads, kv_len);
 
-  {
-    constexpr int MAX_TPB = 256;
-    int tpb = max(32, min(bit_ceil(kv_len), MAX_TPB));
+  int block = std::max(32, std::min(bit_ceil(kv_len), 256));
 
-    dim3 block(tpb);
-    size_t shm = tpb * sizeof(float);
-    softmax_inplace<<<1, block, shm>>>(atth, kv_len);
-  }
+  softmax_inplace<<<1, block>>>(atth, kv_len);
 
-  {
-    compute_weighted_sum<<<head_dim, WARP_SIZE>>>(out, atth, reinterpret_cast<const half *>(vh), head_dim, n_kv_heads,
-                                                  kv_len);
-  }
+  compute_weighted_sum<<<head_dim, WARP_SIZE>>>(out, atth, reinterpret_cast<const half *>(vh), head_dim, n_kv_heads,
+                                                kv_len);
+}
+
+void mh_attention_fp32_kv_fp16(float *out, float *att, const float *q, const void *k, const void *v, int num_heads,
+                               int head_dim, int n_kv_heads, int kv_len) {
+  constexpr int WARP_SIZE = 32;
+  dim3 grid1(kv_len, num_heads);
+  mh_compute_raw_scores<<<grid1, WARP_SIZE>>>(att, q, reinterpret_cast<const half *>(k), head_dim, n_kv_heads, kv_len);
+  dim3 grid2(1, num_heads);
+  int block = std::max(32, std::min(bit_ceil(kv_len), 256));
+  mh_softmax_inplace<<<grid2, block>>>(att, kv_len);
+
+  dim3 grid3(head_dim, num_heads);
+  mh_compute_weighted_sum<<<grid3, WARP_SIZE>>>(out, att, reinterpret_cast<const half *>(v), head_dim, n_kv_heads,
+                                                kv_len);
 }
 
 } // namespace tinyllm::cuda

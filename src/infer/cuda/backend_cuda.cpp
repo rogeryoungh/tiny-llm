@@ -142,18 +142,8 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
   }
 
   // 3. Attention
-  const std::int32_t q_per_head = config.num_attention_heads / config.num_key_value_heads;
-  for (std::int32_t h = 0; h < config.num_attention_heads; ++h) {
-    std::int32_t kv_offset = (h / q_per_head) * head_dim;
-
-    float *atth = reinterpret_cast<float *>(gpu_v.attn) + h * kv_size;
-    float *qh = reinterpret_cast<float *>(gpu_v.q) + h * head_dim;
-    float *xb2h = reinterpret_cast<float *>(gpu_v.xb2) + h * head_dim;
-    fp16_t *kh = reinterpret_cast<fp16_t *>(gpu_kc) + kv_offset;
-    fp16_t *vh = reinterpret_cast<fp16_t *>(gpu_vc) + kv_offset;
-
-    cuda::attention_softmax_fp32_kv_fp16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
-  }
+  cuda::mh_attention_fp32_kv_fp16(gpu_v.xb2, gpu_v.attn, gpu_v.q, gpu_kc, gpu_vc, config.num_attention_heads, head_dim,
+                                  config.num_key_value_heads, kv_len);
 
   // 4. Combine attention outputs
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.xb, gpu_v.xb2, gpu_block.attn_o, q_dim, config.hidden_size);
