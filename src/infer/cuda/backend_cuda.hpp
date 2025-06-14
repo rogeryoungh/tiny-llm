@@ -52,12 +52,12 @@ protected:
   std::size_t kv_size;
 
   DataType kv_dtype;
-  cuda::ModelWeights gpu_w;
+  cuda::ModelWeights weights;
 
-  Tensor x, xb, xb2, hb, hb2, q, k, v, attn, logits;
-  std::vector<Tensor> k_cache, v_cache;
+  Tensor logits_cpu;
 
-  cuda::InferVars gpu_v;
+  float *x, *xb, *xb2, *hb, *hb2, *q, *k, *v, *attn, *logits;
+  std::vector<void *> k_cache, v_cache;
 
 protected:
   void forward_block(std::size_t block_id, std::int32_t pos, std::int32_t kv_sink,
