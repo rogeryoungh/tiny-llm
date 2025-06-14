@@ -1,5 +1,7 @@
 #include "tokenizer.hpp"
 #include "../utils/utf8.hpp"
+#include <bit>
+#include <cstdint>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -9,14 +11,36 @@ TokenizerTrieNode::TokenizerTrieNode(std::int32_t id) : token_id(id) {}
 
 void TokenizerTrieNode::insert(const std::string_view word, std::int32_t token_id) {
   TokenizerTrieNode *p = this;
-  for (const char c : word) {
-    if (p->children.empty()) {
-      p->children.resize(256); // Assuming ASCII characters
+  for (const std::uint8_t c : word) {
+    const std::uint32_t c0 = c % 64, c1 = c / 64;
+    const std::uint64_t mask = 1ULL << c0;
+    auto &cmask = p->mask64[c1];
+    auto &cc = p->children[c1];
+
+    if (cmask & mask) {
+      int u = std::popcount(cmask & (mask - 1));
+      p = &cc[u];
+
+    } else {
+      cmask |= mask;
+      int u = std::popcount(cmask & (mask - 1));
+      cc.insert(cc.begin() + u, TokenizerTrieNode{});
+      p = &cc[u];
     }
-    auto *q = &p->children[static_cast<std::uint8_t>(c)];
-    p = q;
   }
   p->token_id = token_id;
+}
+
+const TokenizerTrieNode *TokenizerTrieNode::get(std::uint8_t c) const {
+  const std::uint32_t c0 = c % 64, c1 = c / 64;
+  const std::uint64_t mask = 1ULL << c0;
+
+  if (mask & mask64[c1]) {
+    int u = std::popcount(mask64[c1] & (mask - 1));
+    return &children[c1][u];
+  } else {
+    return nullptr;
+  }
 }
 
 Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
@@ -107,14 +131,15 @@ std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
   }
   std::size_t i = 0;
   while (i < text.size()) {
-    TokenizerTrieNode *p = &root, *valid_p = nullptr;
+    const TokenizerTrieNode *p = &root, *valid_p = nullptr;
     std::size_t j = i, valid_j = i;
     while (j < text.size()) {
       const auto uc = static_cast<std::uint8_t>(text[j]);
-      if (p->children.empty()) {
+      auto *nxt = p->get(uc);
+      if (!nxt) {
         break;
       } else {
-        p = &p->children[uc];
+        p = nxt;
         j += 1;
         if (p->token_id >= 0) {
           valid_p = p;
@@ -158,7 +183,9 @@ std::size_t Tokenizer::memory_usage() const {
   auto dfs_trie = [](auto &&self, const TokenizerTrieNode &node) -> std::size_t {
     std::size_t size = sizeof(TokenizerTrieNode);
     for (const auto &c : node.children) {
-      size += self(self, c);
+      for (const auto &c2 : c) {
+        size += self(self, c2);
+      }
     }
     return size;
   };

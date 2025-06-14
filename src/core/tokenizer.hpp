@@ -9,11 +9,15 @@ namespace tinyllm {
 
 struct TokenizerTrieNode {
   std::int32_t token_id;
-  std::vector<TokenizerTrieNode> children;
+
+  std::array<std::uint64_t, 4> mask64{};
+  std::array<std::vector<TokenizerTrieNode>, 4> children{};
 
   TokenizerTrieNode(std::int32_t id = -1);
 
   void insert(const std::string_view word, std::int32_t token_id);
+
+  const TokenizerTrieNode *get(std::uint8_t c) const;
 };
 
 struct Tokenizer {
