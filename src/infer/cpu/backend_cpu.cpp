@@ -59,7 +59,7 @@ void InferenceBackendCPU::_matrix_mul_vec_bias(float *out, const float *a, const
   }
 }
 
-void InferenceBackendCPU::forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos,
+void InferenceBackendCPU::forward_block(const Model::Block &block, Tensor &kc, Tensor &vc, std::int32_t pos,
                                         std::int32_t kv_sink, std::int32_t kv_pos, std::int32_t kv_len) {
   // 1. Layer normalization on input
   _rms_norm(xb.as<float>(), x.as<float>(), block.input_norm, config.hidden_size, config.rms_norm_eps);
@@ -199,7 +199,7 @@ void InferenceBackendCPU::forward(std::int32_t token, std::int32_t pos) {
 
   // 2. Forward through each block
   for (std::int32_t i = 0; i < config.num_hidden_layers; ++i) {
-    const Block &block = model.weight.blocks[i];
+    const Model::Block &block = model.weight.blocks[i];
     forward_block(block, k_cache[i], v_cache[i], pos, kv_sink, kv_pos, kv_len);
   }
 
@@ -231,7 +231,7 @@ void InferenceBackendCPU::forward_prefill(std::int32_t token, std::int32_t pos) 
 
   // 2. Forward through each block
   for (std::int32_t i = 0; i < config.num_hidden_layers; ++i) {
-    const Block &block = model.weight.blocks[i];
+    const Model::Block &block = model.weight.blocks[i];
     forward_block(block, k_cache[i], v_cache[i], pos, kv_sink, kv_pos, kv_len);
   }
 }

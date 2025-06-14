@@ -7,22 +7,22 @@
 
 namespace tinyllm {
 
-struct Block {
-  Tensor attn_q, attn_k, attn_v, attn_o;
-  Tensor attn_q_bias, attn_k_bias, attn_v_bias;
-  Tensor attn_q_norm, attn_k_norm;
-  Tensor mlp_down, mlp_gate, mlp_up;
-  Tensor input_norm, post_norm;
-};
-
-struct ModelWeights {
-  std::vector<Block> blocks;
-  Tensor embed;
-  Tensor norm;
-  Tensor lm_head;
-};
-
 struct Model {
+  struct Block {
+    Tensor attn_q, attn_k, attn_v, attn_o;
+    Tensor attn_q_bias, attn_k_bias, attn_v_bias;
+    Tensor attn_q_norm, attn_k_norm;
+    Tensor mlp_down, mlp_gate, mlp_up;
+    Tensor input_norm, post_norm;
+  };
+
+  struct ModelWeights {
+    std::vector<Block> blocks;
+    Tensor embed;
+    Tensor norm;
+    Tensor lm_head;
+  };
+
   Config &config;
   ArenaAlloc alloc;
   DataType dtype;

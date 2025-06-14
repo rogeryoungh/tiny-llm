@@ -1,5 +1,6 @@
 #include "core/config.hpp"
 #include "core/model.hpp"
+#include "core/model_cuda.hpp"
 #include "core/tokenizer.hpp"
 #include "infer/inference_ctx.hpp"
 #include "utils/debug.hpp"
@@ -32,7 +33,9 @@ int main(int argc, char *argv[]) {
   model.load_weights();
   std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
-  tinyllm::InferenceCtx ctx(model, 4096, tinyllm::DeviceType::GPU, tinyllm::DataType::F16);
+  tinyllm::ModelCuda model_cuda(model);
+
+  tinyllm::InferenceCtx ctx(model_cuda, 4096, tinyllm::DataType::F16);
 
   std::cout << "[DEBUG] Weight memory usage: " << (model.memory_usage() >> 20) << " MB" << std::endl;
   std::cout << "[DEBUG] Inference memory usage: " << (ctx.memory_usage() >> 20) << " MB" << std::endl;

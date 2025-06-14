@@ -6,7 +6,7 @@
 
 namespace tinyllm {
 
-InferenceBackendCUDA::InferenceBackendCUDA(Model &model_, std::size_t kv_size, DataType kv_dtype)
+InferenceBackendCUDA::InferenceBackendCUDA(ModelCuda &model_, std::size_t kv_size, DataType kv_dtype)
     : model(model_), config(model.config), kv_size(kv_size), kv_dtype(kv_dtype) {
   logits_cpu = Tensor::alloc(alloc, DataType::F32, config.vocab_size);
 
@@ -41,46 +41,11 @@ InferenceBackendCUDA::InferenceBackendCUDA(Model &model_, std::size_t kv_size, D
   ////////
 
   const auto &weight = model.weight;
-
-  weights.embed = cuda_alloc.upload(weight.embed.data);
-  weights.norm = cuda_alloc.upload(weight.norm.data);
-  weights.blocks.resize(config.num_hidden_layers);
-
-  for (std::size_t i = 0; i < config.num_hidden_layers; ++i) {
-    auto &block_cpu = weight.blocks[i];
-    auto &block = weights.blocks[i];
-    block.attn_q = cuda_alloc.upload(block_cpu.attn_q.data);
-    block.attn_k = cuda_alloc.upload(block_cpu.attn_k.data);
-    block.attn_v = cuda_alloc.upload(block_cpu.attn_v.data);
-    block.attn_o = cuda_alloc.upload(block_cpu.attn_o.data);
-    block.mlp_down = cuda_alloc.upload(block_cpu.mlp_down.data);
-    block.mlp_gate = cuda_alloc.upload(block_cpu.mlp_gate.data);
-    block.mlp_up = cuda_alloc.upload(block_cpu.mlp_up.data);
-    block.input_norm = cuda_alloc.upload(block_cpu.input_norm.data);
-    block.post_norm = cuda_alloc.upload(block_cpu.post_norm.data);
-
-    if (config.model_type == "qwen2") {
-      block.attn_k_bias = cuda_alloc.upload(block_cpu.attn_k_bias.data);
-      block.attn_q_bias = cuda_alloc.upload(block_cpu.attn_q_bias.data);
-      block.attn_v_bias = cuda_alloc.upload(block_cpu.attn_v_bias.data);
-    }
-
-    if (config.model_type == "qwen3") {
-      block.attn_q_norm = cuda_alloc.upload(block_cpu.attn_q_norm.data);
-      block.attn_k_norm = cuda_alloc.upload(block_cpu.attn_k_norm.data);
-    }
-  }
-  if (config.tie_word_embeddings) {
-    weights.lm_head = weights.embed;
-  } else {
-    weights.lm_head = cuda_alloc.upload(weight.lm_head.data);
-  }
 }
 
 void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos, std::int32_t kv_sink,
                                          std::int32_t kv_pos, std::int32_t kv_len) {
-  const auto &block_cpu = model.weight.blocks[block_id];
-  auto &block = weights.blocks[block_id];
+  auto &block = model.weight.blocks[block_id];
   auto &kc = k_cache[block_id];
   auto &vc = v_cache[block_id];
 
@@ -92,8 +57,8 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
   const std::int32_t q_dim = config.num_attention_heads * head_dim;
   const std::int32_t kv_dim = config.num_key_value_heads * head_dim;
 
-  const bool has_qkv_bias = !block_cpu.attn_k_bias.data.empty();
-  const bool has_qk_norm = !block_cpu.attn_q_norm.data.empty();
+  const bool has_qkv_bias = block.attn_k_bias;
+  const bool has_qk_norm = block.attn_q_norm;
 
   if (has_qkv_bias) {
     cuda::matrix_mul_vec_bias_fp32_b_fp16(q, xb, block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
@@ -149,7 +114,7 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
 
 void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
-  cuda::copy_fp16_to_fp32_n(reinterpret_cast<std::uint16_t *>(weights.embed) + token * config.hidden_size,
+  cuda::copy_fp16_to_fp32_n(reinterpret_cast<std::uint16_t *>(model.weight.embed) + token * config.hidden_size,
                             config.hidden_size, x);
 
   // When decoding past the context length, keep the first few tokens in the KV cache
@@ -165,18 +130,18 @@ void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
   }
 
   // 3. Final layer normalization
-  cuda::rms_norm_fp32_b_fp16(x, x, weights.norm, config.hidden_size, 1, config.rms_norm_eps);
+  cuda::rms_norm_fp32_b_fp16(x, x, model.weight.norm, config.hidden_size, 1, config.rms_norm_eps);
 
   // 4. Compute logits
-  cuda::matrix_mul_vec_fp32_b_fp16(logits, x, weights.lm_head, config.hidden_size, config.vocab_size);
+  cuda::matrix_mul_vec_fp32_b_fp16(logits, x, model.weight.lm_head, config.hidden_size, config.vocab_size);
   cuda::copy_to_host(logits, logits_cpu.size_bytes(), logits_cpu.as<float>());
   cuda::check_and_sync();
 }
 
 void InferenceBackendCUDA::forward_prefill(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
-  cuda::copy_fp16_to_fp32_n(reinterpret_cast<fp16_t *>(weights.embed) + token * config.hidden_size, config.hidden_size,
-                            x);
+  cuda::copy_fp16_to_fp32_n(reinterpret_cast<fp16_t *>(model.weight.embed) + token * config.hidden_size,
+                            config.hidden_size, x);
 
   // When decoding past the context length, keep the first few tokens in the KV cache
   // untouched as "attention sinks" while replacing the rest in ring order.
@@ -197,6 +162,6 @@ std::uint32_t InferenceBackendCUDA::argmax() const {
                        std::max_element(logits_cpu.as<float>(), logits_cpu.as<float>() + config.vocab_size));
 }
 
-std::size_t InferenceBackendCUDA::memory_usage() const { return alloc.total_allocated; }
+std::size_t InferenceBackendCUDA::memory_usage() const { return cuda_alloc.total_allocated; }
 
 } // namespace tinyllm

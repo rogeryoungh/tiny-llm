@@ -31,7 +31,7 @@ protected:
   std::vector<Tensor> k_cache, v_cache;
 
 protected:
-  void forward_block(const Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
+  void forward_block(const Model::Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,
                      std::int32_t kv_pos, std::int32_t kv_len);
 
   void _rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps);

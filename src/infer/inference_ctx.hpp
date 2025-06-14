@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/model.hpp"
+#include "../core/model_cuda.hpp"
 #include "../core/tensor.hpp"
 
 namespace tinyllm {
@@ -18,8 +18,8 @@ struct InferenceBackend {
 };
 
 struct InferenceCtx {
-  InferenceCtx(Model &model, std::size_t kv_size, DeviceType device = DeviceType::CPU,
-               DataType kv_dtype = DataType::F32);
+  InferenceCtx(Model &model, std::size_t kv_size, DataType kv_dtype = DataType::F32);
+  InferenceCtx(ModelCuda &model, std::size_t kv_size, DataType kv_dtype = DataType::F32);
 
   void forward(std::int32_t token, std::int32_t pos);
 
