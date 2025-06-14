@@ -97,7 +97,6 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
 
   // 1. Layer normalization on input
   cuda::rms_norm_fp32_b_fp16(gpu_v.xb, gpu_v.x, gpu_block.input_norm, config.hidden_size, 1, config.rms_norm_eps);
-  cuda::check_and_sync();
 
   // 2. Self-attention
   const std::int32_t head_dim = config.head_dim;
@@ -114,12 +113,10 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
                                           config.hidden_size, kv_dim);
     cuda::matrix_mul_vec_bias_fp32_b_fp16(gpu_v.v, gpu_v.xb, gpu_block.attn_v, gpu_block.attn_v_bias,
                                           config.hidden_size, kv_dim);
-    cuda::check_and_sync();
   } else {
     cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.q, gpu_v.xb, gpu_block.attn_q, config.hidden_size, q_dim);
     cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.k, gpu_v.xb, gpu_block.attn_k, config.hidden_size, kv_dim);
     cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.v, gpu_v.xb, gpu_block.attn_v, config.hidden_size, kv_dim);
-    cuda::check_and_sync();
   }
 
   if (has_qk_norm) {
@@ -127,17 +124,14 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
                                config.rms_norm_eps);
     cuda::rms_norm_fp32_b_fp16(gpu_v.k, gpu_v.k, gpu_block.attn_k_norm, head_dim, config.num_key_value_heads,
                                config.rms_norm_eps);
-    cuda::check_and_sync();
   }
   cuda::rope_inplace_fp32(reinterpret_cast<float *>(gpu_v.q), config.num_attention_heads, head_dim, pos,
                           config.rope_theta);
   cuda::rope_inplace_fp32(reinterpret_cast<float *>(gpu_v.k), config.num_key_value_heads, head_dim, pos,
                           config.rope_theta);
-  cuda::check_and_sync();
 
   cuda::copy_fp32_to_fp16_n(gpu_v.k, kv_dim, reinterpret_cast<fp16_t *>(gpu_kc) + kv_pos * kv_dim);
   cuda::copy_fp32_to_fp16_n(gpu_v.v, kv_dim, reinterpret_cast<fp16_t *>(gpu_vc) + kv_pos * kv_dim);
-  cuda::check_and_sync();
 
   for (std::size_t r = 0; r < kv_sink; ++r) {
     cuda::copy_fp16_to_fp32_n(reinterpret_cast<fp16_t *>(gpu_kc) + r * kv_dim, kv_dim, gpu_v.k);
@@ -145,7 +139,6 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
     cuda::rope_inplace_fp32(gpu_v.k, config.num_key_value_heads, head_dim, 1, config.rope_theta);
 
     cuda::copy_fp32_to_fp16_n(gpu_v.k, kv_dim, reinterpret_cast<fp16_t *>(gpu_kc) + r * kv_dim);
-    cuda::check_and_sync();
   }
 
   // 3. Attention
@@ -160,43 +153,34 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
     fp16_t *vh = reinterpret_cast<fp16_t *>(gpu_vc) + kv_offset;
 
     cuda::attention_softmax_fp32_kv_fp16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
-    cuda::check_and_sync();
   }
 
   // 4. Combine attention outputs
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.xb, gpu_v.xb2, gpu_block.attn_o, q_dim, config.hidden_size);
-  cuda::check_and_sync();
 
   cuda::vec_add_inplace_fp32(gpu_v.x, gpu_v.xb, config.hidden_size);
-  cuda::check_and_sync();
 
   // 5. Layer normalization on output
   cuda::rms_norm_fp32_b_fp16(gpu_v.xb, gpu_v.x, gpu_block.post_norm, config.hidden_size, 1, config.rms_norm_eps);
-  cuda::check_and_sync();
 
   // 6. MLP
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.hb, gpu_v.xb, gpu_block.mlp_gate, config.hidden_size,
                                    config.intermediate_size);
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.hb2, gpu_v.xb, gpu_block.mlp_up, config.hidden_size, config.intermediate_size);
-  cuda::check_and_sync();
 
   cuda::swiglu_fp32(reinterpret_cast<float *>(gpu_v.hb), reinterpret_cast<const float *>(gpu_v.hb2),
                     reinterpret_cast<const float *>(gpu_v.hb), config.intermediate_size);
-  cuda::check_and_sync();
 
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.xb2, gpu_v.hb, gpu_block.mlp_down, config.intermediate_size,
                                    config.hidden_size);
-  cuda::check_and_sync();
 
   cuda::vec_add_inplace_fp32(gpu_v.x, gpu_v.xb2, config.hidden_size);
-  cuda::check_and_sync();
 }
 
 void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
   // 1. Embed the token
   cuda::copy_fp16_to_fp32_n(reinterpret_cast<std::uint16_t *>(gpu_w.embed) + token * config.hidden_size,
                             config.hidden_size, gpu_v.x);
-  cuda::check_and_sync();
 
   // When decoding past the context length, keep the first few tokens in the KV cache
   // untouched as "attention sinks" while replacing the rest in ring order.
@@ -212,7 +196,6 @@ void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
 
   // 3. Final layer normalization
   cuda::rms_norm_fp32_b_fp16(gpu_v.x, gpu_v.x, gpu_w.norm, config.hidden_size, 1, config.rms_norm_eps);
-  cuda::check_and_sync();
 
   // 4. Compute logits
   cuda::matrix_mul_vec_fp32_b_fp16(gpu_v.logits, gpu_v.x, gpu_w.lm_head, config.hidden_size, config.vocab_size);
@@ -224,7 +207,6 @@ void InferenceBackendCUDA::forward_prefill(std::int32_t token, std::int32_t pos)
   // 1. Embed the token
   cuda::copy_fp16_to_fp32_n(reinterpret_cast<fp16_t *>(gpu_w.embed) + token * config.hidden_size, config.hidden_size,
                             gpu_v.x);
-  cuda::check_and_sync();
 
   // When decoding past the context length, keep the first few tokens in the KV cache
   // untouched as "attention sinks" while replacing the rest in ring order.
@@ -237,6 +219,7 @@ void InferenceBackendCUDA::forward_prefill(std::int32_t token, std::int32_t pos)
   for (std::int32_t i = 0; i < config.num_hidden_layers; ++i) {
     forward_block(i, pos, kv_sink, kv_pos, kv_len);
   }
+  cuda::check_and_sync();
 }
 
 std::uint32_t InferenceBackendCUDA::argmax() const {
