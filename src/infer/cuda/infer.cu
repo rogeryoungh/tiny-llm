@@ -1,5 +1,5 @@
-#include "infer.hpp"
 #include "block_reduce.cuh"
+#include "infer.hpp"
 
 #include <cfloat>
 #include <cmath>
@@ -181,18 +181,25 @@ void swiglu_fp32(float *out, const float *x, const float *gate, int size) {
 
 __global__ void compute_raw_scores(float *atth, const float *qh, const half *kh, int head_dim, int n_kv_heads,
                                    int kv_len) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if (tid >= kv_len)
+  const int col = blockIdx.x;
+  if (col >= kv_len)
     return;
 
+  const int lane = threadIdx.x;
   int kv_stride = n_kv_heads * head_dim;
-  const half *kh_row = kh + tid * kv_stride;
+  const half *kh_row = kh + col * kv_stride;
   float sum = 0.0f;
   float scale = rsqrtf(float(head_dim));
-  for (int j = 0; j < head_dim; ++j) {
+
+  for (int j = lane; j < head_dim; j += warpSize) {
     sum += qh[j] * __half2float(kh_row[j]);
   }
-  atth[tid] = sum * scale;
+
+  sum = warp_reduce_sum(sum);
+
+  if (lane == 0) {
+    atth[col] = sum * scale;
+  }
 }
 
 __global__ void softmax_inplace(float *atth, int kv_len) {
@@ -219,27 +226,33 @@ __global__ void softmax_inplace(float *atth, int kv_len) {
 
 __global__ void compute_weighted_sum(float *xout, const float *atth, const half *vh, int head_dim, int n_kv_heads,
                                      int kv_len) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if (tid >= head_dim)
+  const int col = blockIdx.x;
+  if (col >= head_dim)
     return;
 
+  const int lane = threadIdx.x;
   int kv_stride = n_kv_heads * head_dim;
-  const half *vh_col = vh + tid;
+  const half *vh_col = vh + col;
   float sum = 0.0f;
 
-  for (int i = 0; i < kv_len; ++i) {
+  for (int i = lane; i < kv_len; i += warpSize) {
     sum += atth[i] * __half2float(vh_col[i * kv_stride]);
   }
-  xout[tid] = sum;
+
+  sum = warp_reduce_sum(sum);
+
+  if (lane == 0) {
+    xout[col] = sum;
+  }
 }
 
 void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, const void *kh, const void *vh,
                                     int head_dim, int n_kv_heads, int kv_len) {
+  constexpr int WARP_SIZE = 32;
 
   {
-    const int block = 16;
-    int grid = (kv_len + block - 1) / block;
-    compute_raw_scores<<<grid, block>>>(atth, qh, reinterpret_cast<const half *>(kh), head_dim, n_kv_heads, kv_len);
+    compute_raw_scores<<<kv_len, WARP_SIZE>>>(atth, qh, reinterpret_cast<const half *>(kh), head_dim, n_kv_heads,
+                                              kv_len);
   }
 
   {
@@ -252,9 +265,8 @@ void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, co
   }
 
   {
-    const int block = 16;
-    int grid = (head_dim + block - 1) / block;
-    compute_weighted_sum<<<grid, block>>>(out, atth, reinterpret_cast<const half *>(vh), head_dim, n_kv_heads, kv_len);
+    compute_weighted_sum<<<head_dim, WARP_SIZE>>>(out, atth, reinterpret_cast<const half *>(vh), head_dim, n_kv_heads,
+                                                  kv_len);
   }
 }
 
