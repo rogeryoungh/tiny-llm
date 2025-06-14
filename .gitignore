@@ -4,3 +4,9 @@ out/
 .cache/
 compile_commands.json
 tmp/
+
+*.ncu-rep
+*.nsys-rep
+*.qdstrm
+*.html
+
