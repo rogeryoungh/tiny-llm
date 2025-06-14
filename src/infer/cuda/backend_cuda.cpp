@@ -157,9 +157,8 @@ void InferenceBackendCUDA::forward_prefill(std::int32_t token, std::int32_t pos)
   cuda::check_and_sync();
 }
 
-std::uint32_t InferenceBackendCUDA::argmax() const {
-  return std::distance(logits_cpu.as<float>(),
-                       std::max_element(logits_cpu.as<float>(), logits_cpu.as<float>() + config.vocab_size));
+std::span<const float> InferenceBackendCUDA::get_logits() const {
+  return std::span<const float>(logits_cpu.as<float>(), config.vocab_size);
 }
 
 std::size_t InferenceBackendCUDA::memory_usage() const { return cuda_alloc.total_allocated; }

@@ -40,6 +40,27 @@ Config::Config(const fs::path &path) : model_path(path) {
   }
 
   vocab_size = config_json.value("vocab_size", -1);
+
+  const fs::path generation_config_file = path / "generation_config.json";
+
+  if (!fs::exists(generation_config_file)) {
+    do_sample = false;
+    temperature = 1.0f;
+    top_p = 0.9f;
+    top_k = 50.0f;
+  } else {
+    std::ifstream gen_file(generation_config_file);
+    if (!gen_file.is_open()) {
+      throw std::runtime_error("Failed to open generation config file: " + generation_config_file.string());
+    }
+    nlohmann::json gen_json;
+    gen_file >> gen_json;
+
+    do_sample = gen_json.value("do_sample", false);
+    temperature = gen_json.value("temperature", 1.0f);
+    top_p = gen_json.value("top_p", 1.0f);
+    top_k = gen_json.value("top_k", 0);
+  }
 }
 
 } // namespace tinyllm

@@ -16,7 +16,7 @@ struct InferenceBackendCUDA : InferenceBackend {
 
   void forward_prefill(std::int32_t token, std::int32_t pos) override;
 
-  std::uint32_t argmax() const override;
+  std::span<const float> get_logits() const override;
 
   std::size_t memory_usage() const override;
 

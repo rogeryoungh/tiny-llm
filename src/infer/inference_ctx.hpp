@@ -12,7 +12,7 @@ struct InferenceBackend {
 
   virtual void forward_prefill(std::int32_t token, std::int32_t pos) = 0;
 
-  virtual std::uint32_t argmax() const = 0;
+  virtual std::span<const float> get_logits() const = 0;
 
   virtual std::size_t memory_usage() const = 0;
 };
@@ -25,9 +25,9 @@ struct InferenceCtx {
 
   void forward_prefill(std::int32_t token, std::int32_t pos);
 
-  std::uint32_t argmax() const;
-
   std::size_t memory_usage() const;
+
+   std::span<const float> get_logits() const;
 
 protected:
   std::unique_ptr<InferenceBackend> backend;

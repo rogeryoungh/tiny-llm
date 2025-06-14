@@ -23,7 +23,7 @@ void InferenceCtx::forward(std::int32_t token, std::int32_t pos) { backend->forw
 
 void InferenceCtx::forward_prefill(std::int32_t token, std::int32_t pos) { backend->forward_prefill(token, pos); }
 
-std::uint32_t InferenceCtx::argmax() const { return backend->argmax(); }
+std::span<const float> InferenceCtx::get_logits() const { return backend->get_logits(); }
 
 std::size_t InferenceCtx::memory_usage() const { return backend->memory_usage(); }
 

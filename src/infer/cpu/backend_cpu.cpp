@@ -236,9 +236,8 @@ void InferenceBackendCPU::forward_prefill(std::int32_t token, std::int32_t pos) 
   }
 }
 
-std::uint32_t InferenceBackendCPU::argmax() const {
-  return std::distance(logits.as<float>(),
-                       std::max_element(logits.as<float>(), logits.as<float>() + config.vocab_size));
+std::span<const float> InferenceBackendCPU::get_logits() const {
+  return std::span(logits.as<float>(), config.vocab_size);
 }
 
 std::size_t InferenceBackendCPU::memory_usage() const { return alloc.total_allocated; }

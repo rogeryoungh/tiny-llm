@@ -25,6 +25,11 @@ struct Config {
 
   bool tie_word_embeddings;
 
+  bool do_sample;
+  float temperature;
+  float top_p;
+  float top_k;
+
   Config(const std::filesystem::path &path);
 };
 
