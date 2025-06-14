@@ -4,6 +4,7 @@
 #include "../../core/model_cuda.hpp"
 #include "../../core/tensor.hpp"
 #include "../inference_ctx.hpp"
+#include "../sampler.hpp"
 #include "arena_alloc.hpp"
 
 namespace tinyllm {
@@ -16,7 +17,9 @@ struct InferenceBackendCUDA : InferenceBackend {
 
   void forward_prefill(std::int32_t token, std::int32_t pos) override;
 
-  std::span<const float> get_logits() const override;
+  std::int32_t sample() override;
+
+  std::int32_t sample_argmax() override;
 
   std::size_t memory_usage() const override;
 
@@ -33,6 +36,8 @@ protected:
 
   float *x, *xb, *xb2, *hb, *hb2, *q, *k, *v, *attn, *logits;
   std::vector<void *> k_cache, v_cache;
+
+  Sampler sampler;
 
 protected:
   void forward_block(std::size_t block_id, std::int32_t pos, std::int32_t kv_sink, std::int32_t kv_pos,

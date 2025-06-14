@@ -3,7 +3,6 @@
 #include "core/model_cuda.hpp"
 #include "core/tokenizer.hpp"
 #include "infer/inference_ctx.hpp"
-#include "infer/sampler.hpp"
 #include "utils/debug.hpp"
 #include "utils/stopwatch.hpp"
 #include "utils/utf8.hpp"
@@ -55,8 +54,6 @@ int main(int argc, char *argv[]) {
   // ctx.forward(model, 0, 0);
   std::cout << "[DEBUG] Forwarding prompt ..." << std::endl;
 
-  tinyllm::Sampler sampler(ctx, config.temperature, config.top_p, config.top_k);
-
   tinyllm::Stopwatch prefill_timer;
   for (std::int32_t i = 0; i < tokens.size(); ++i) {
     if (i + 1 < tokens.size()) {
@@ -74,7 +71,7 @@ int main(int argc, char *argv[]) {
   std::string answer_buffer;
   std::size_t generate_tokens = 0;
   for (std::int32_t i = 0; i < 4096; ++i) {
-    std::uint32_t token = sampler.sample();
+    std::uint32_t token = ctx.sample();
     generate_tokens += 1;
     if (token == config.eos_token_id) {
       break;

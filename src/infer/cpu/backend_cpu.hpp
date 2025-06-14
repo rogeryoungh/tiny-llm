@@ -3,6 +3,7 @@
 #include "../../core/config.hpp"
 #include "../../core/model.hpp"
 #include "../../core/tensor.hpp"
+#include "../sampler.hpp"
 #include "../inference_ctx.hpp"
 
 namespace tinyllm {
@@ -15,7 +16,9 @@ struct InferenceBackendCPU : InferenceBackend {
 
   void forward_prefill(std::int32_t token, std::int32_t pos) override;
 
-  std::span<const float> get_logits() const override;
+  std::int32_t sample() override;
+
+  std::int32_t sample_argmax() override;
 
   std::size_t memory_usage() const override;
 
@@ -29,6 +32,8 @@ protected:
 
   Tensor x, xb, xb2, hb, hb2, q, k, v, attn, logits;
   std::vector<Tensor> k_cache, v_cache;
+
+  Sampler sampler;
 
 protected:
   void forward_block(const Model::Block &block, Tensor &kc, Tensor &vc, std::int32_t pos, std::int32_t kv_sink,

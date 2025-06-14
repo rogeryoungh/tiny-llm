@@ -1,6 +1,7 @@
 #include "backend_cpu.hpp"
 #include "../../utils/precision.hpp"
 #include "infer.hpp"
+#include <cassert>
 #include <cstddef>
 
 namespace tinyllm {
@@ -236,8 +237,21 @@ void InferenceBackendCPU::forward_prefill(std::int32_t token, std::int32_t pos) 
   }
 }
 
-std::span<const float> InferenceBackendCPU::get_logits() const {
-  return std::span(logits.as<float>(), config.vocab_size);
+std::int32_t InferenceBackendCPU::sample_argmax() {
+  return sampler.sample_argmax({logits.as<float>(), static_cast<std::size_t>(config.vocab_size)});
+}
+
+std::int32_t InferenceBackendCPU::sample() {
+  if (config.top_k <= 0) {
+    if (config.top_p >= 1.0f) {
+      return sample_argmax();
+    } else {
+      assert(!"Top-p sampling is not supported without top-k.");
+      return 0;
+    }
+  } else {
+    return sampler.sample_top_k_top_p({logits.as<float>(), static_cast<std::size_t>(config.vocab_size)});
+  }
 }
 
 std::size_t InferenceBackendCPU::memory_usage() const { return alloc.total_allocated; }

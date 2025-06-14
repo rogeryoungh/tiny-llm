@@ -1,27 +1,31 @@
 #include "sampler.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
-#include <random>
 
 namespace tinyllm {
 
-Sampler::Sampler(InferenceCtx &ctx, float temperature, float top_p, std::int32_t top_k, int seed)
-    : ctx(ctx), temperature(temperature), top_p(top_p), top_k(top_k), gen(seed) {
-  heap.reserve(top_k);
-}
+Sampler::Sampler(float temperature, float top_p, std::int32_t top_k, int seed)
+    : temperature(temperature), top_p(top_p), top_k(top_k), gen(seed) {}
 
-std::int32_t Sampler::sample_argmax() {
-  const auto logits = ctx.get_logits();
+std::int32_t Sampler::sample_argmax(const std::span<float> logits) {
   auto max_it = std::max_element(logits.begin(), logits.end());
   return static_cast<std::int32_t>(std::distance(logits.begin(), max_it));
 }
 
-std::int32_t Sampler::sample_top_k_top_p() {
-  const auto &logits = ctx.get_logits();
+std::int32_t Sampler::sample_top_k_top_p(const std::span<float> logits) {
+  if (top_k <= 0) {
+    return sample_argmax(logits);
+  }
+  auto heap = get_top_k(logits);
+  return get_top_p(std::move(heap));
+}
+
+std::vector<std::pair<float, std::int32_t>> Sampler::get_top_k(const std::span<float> logits) {
   const size_t N = logits.size();
-  heap.clear();
+
+  std::vector<std::pair<float, std::int32_t>> heap;
+  heap.reserve(top_k);
   auto cmp = [](const auto &a, const auto &b) { return a.first > b.first; };
   for (size_t i = 0; i < N; ++i) {
     float score = logits[i];
@@ -39,6 +43,10 @@ std::int32_t Sampler::sample_top_k_top_p() {
 
   std::ranges::sort_heap(heap, cmp);
 
+  return heap;
+}
+
+std::int32_t Sampler::get_top_p(std::vector<std::pair<float, std::int32_t>> heap) {
   double sum_exp = 0.0;
   for (auto &[p, _] : heap) {
     p = std::exp(p / temperature);
@@ -65,19 +73,6 @@ std::int32_t Sampler::sample_top_k_top_p() {
     }
   }
   return heap.back().second;
-}
-
-std::int32_t Sampler::sample() {
-  if (top_k > 0 && top_p < 1.0f) {
-    return sample_top_k_top_p();
-  } else if (top_k > 0) {
-    return sample_top_k_top_p();
-  } else if (top_p < 1.0f) {
-    assert(!"not implemented yet");
-    return sample_argmax();
-  } else {
-    return sample_argmax();
-  }
 }
 
 } // namespace tinyllm

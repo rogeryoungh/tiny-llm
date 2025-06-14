@@ -1,6 +1,7 @@
 #include "backend_cuda.hpp"
 #include "../../core/float.hpp"
 #include "infer.hpp"
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
@@ -157,8 +158,21 @@ void InferenceBackendCUDA::forward_prefill(std::int32_t token, std::int32_t pos)
   cuda::check_and_sync();
 }
 
-std::span<const float> InferenceBackendCUDA::get_logits() const {
-  return std::span<const float>(logits_cpu.as<float>(), config.vocab_size);
+std::int32_t InferenceBackendCUDA::sample_argmax() {
+  return sampler.sample_argmax({logits_cpu.as<float>(), static_cast<std::size_t>(config.vocab_size)});
+}
+
+std::int32_t InferenceBackendCUDA::sample() {
+  if (config.top_k <= 0) {
+    if (config.top_p >= 1.0f) {
+      return sample_argmax();
+    } else {
+      assert(!"Top-p sampling is not supported without top-k.");
+      return 0;
+    }
+  } else {
+    return sampler.sample_top_k_top_p({logits_cpu.as<float>(), static_cast<std::size_t>(config.vocab_size)});
+  }
 }
 
 std::size_t InferenceBackendCUDA::memory_usage() const { return cuda_alloc.total_allocated; }
