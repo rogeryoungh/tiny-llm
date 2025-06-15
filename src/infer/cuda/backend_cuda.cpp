@@ -135,7 +135,6 @@ void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
 
   // 4. Compute logits
   cuda::matrix_mul_vec_fp32_b_fp16(logits, x, model.weight.lm_head, config.hidden_size, config.vocab_size);
-  cuda::copy_to_host(logits, logits_cpu.size_bytes(), logits_cpu.as<float>());
   cuda::check_and_sync();
 }
 
@@ -163,6 +162,8 @@ std::int32_t InferenceBackendCUDA::sample_argmax() {
 }
 
 std::int32_t InferenceBackendCUDA::sample() {
+  cuda::copy_to_host(logits, logits_cpu.size_bytes(), logits_cpu.as<float>());
+
   if (config.top_k <= 0) {
     if (config.top_p >= 1.0f) {
       return sample_argmax();
