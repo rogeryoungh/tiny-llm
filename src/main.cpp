@@ -3,96 +3,150 @@
 #include "core/model_cuda.hpp"
 #include "core/tokenizer.hpp"
 #include "infer/inference_ctx.hpp"
-#include "utils/debug.hpp"
 #include "utils/stopwatch.hpp"
 #include "utils/utf8.hpp"
 
 #include <iostream>
+#include <print>
+
+#include <cxxopts.hpp>
 
 namespace fs = std::filesystem;
 
 int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <path_to_llm_folder>" << std::endl;
-    return 1;
+  cxxopts::Options options("tinyllm", "A lightweight large language model inference engine.");
+  // clang-format off
+  options.add_options()
+      ("h,help", "Show help")
+      ("m,model", "Path to the LLM folder", cxxopts::value<std::string>())
+      ("prompt", "Prompt text to use for inference", cxxopts::value<std::string>()->default_value(""))
+      ("device", "Device to use for inference (cpu or cuda)", cxxopts::value<std::string>()->default_value("cuda"))
+      ("kv-size", "Size of the key-value cache", cxxopts::value<std::size_t>()->default_value("4096"))
+      ("max-tokens", "Maximum number of tokens to generate", cxxopts::value<std::size_t>()->default_value("4096"))
+      ;
+  // clang-format on
+
+  auto result = options.parse(argc, argv);
+  if (result.count("help") || argc < 2) {
+    std::println("{}", options.help());
+    return 0;
   }
 
-  const fs::path path = argv[1];
+  const fs::path model_path = result["model"].as<std::string>();
+  auto prompt = result["prompt"].as<std::string>();
+  auto device = result["device"].as<std::string>();
+  auto kv_size = result["kv-size"].as<std::size_t>();
+  auto max_tokens = result["max-tokens"].as<std::size_t>();
 
-  std::cout << "[DEBUG] Loading tensors from: " << path << std::endl;
+  std::println("[DEBUG] Model path: {}", model_path.string());
+  std::println("[DEBUG] Using device: {}", device);
 
-  tinyllm::Config config(path);
+  tinyllm::Config config(model_path);
+  if (config.do_sample) {
+    std::println("[DEBUG] Sampling with temperature: {}, top-k: {}, top-p: {}", config.temperature, config.top_k,
+                 config.top_p);
+  } else {
+    std::println("[DEBUG] Sampling disabled, using argmax.");
+  }
 
   tinyllm::Stopwatch tokenizer_load_timer;
   tinyllm::Tokenizer tokenizer(config);
   tokenizer.load_trie();
-  std::cout << std::format("[DEBUG] Tokenizer loaded in {:3f} ms.", tokenizer_load_timer.elapsed_ms()) << std::endl;
+  std::println("[DEBUG] Tokenizer loaded in {:3f} ms, memory usage {} MB.", tokenizer_load_timer.elapsed_ms(),
+               tokenizer.memory_usage() >> 20);
 
   tinyllm::Stopwatch model_load_timer;
-  tinyllm::Model model(config);
-  model.load_weights();
-  std::cout << std::format("[DEBUG] Model weights loaded in {:3f} ms.", model_load_timer.elapsed_ms()) << std::endl;
 
-  tinyllm::ModelCuda model_cuda(model);
+  std::unique_ptr<tinyllm::Model> model_ptr;
+  std::unique_ptr<tinyllm::ModelCuda> model_cuda_ptr;
+  std::unique_ptr<tinyllm::InferenceCtx> ctx_ptr;
 
-  tinyllm::InferenceCtx ctx(model_cuda, 4096, tinyllm::DataType::F16);
+  model_ptr = std::make_unique<tinyllm::Model>(config);
+  model_ptr->load_weights();
+  std::println("[DEBUG] Model loaded in {:3f} ms, memory usage {} MB.", model_load_timer.elapsed_ms(),
+               model_ptr->memory_usage() >> 20);
 
-  std::cout << "[DEBUG] Weight memory usage: " << (model.memory_usage() >> 20) << " MB" << std::endl;
-  std::cout << "[DEBUG] Inference memory usage: " << (ctx.memory_usage() >> 20) << " MB" << std::endl;
-  std::cout << "[DEBUG] Tokenizer memory usage: " << (tokenizer.memory_usage() >> 20) << " MB" << std::endl;
+  if (device == "cpu") {
+    ctx_ptr = std::make_unique<tinyllm::InferenceCtx>(*model_ptr, kv_size, tinyllm::DataType::F32);
+  } else if (device == "cuda") {
+    model_cuda_ptr = std::make_unique<tinyllm::ModelCuda>(*model_ptr);
+    model_ptr.reset();
+    ctx_ptr = std::make_unique<tinyllm::InferenceCtx>(*model_cuda_ptr, kv_size, tinyllm::DataType::F16);
+    std::println("[DEBUG] Model loaded on CUDA, memory usage {} MB", model_cuda_ptr->memory_usage() >> 20);
+  } else {
+    std::println("[ERROR] Unsupported device: {}", device);
+    return 1;
+  }
 
-  std::cout << ">>> " << std::flush;
+  std::println("[DEBUG] Inference memory usage: {} MB", ctx_ptr->memory_usage() >> 20);
 
-  std::string text = "";
-  // std::cin >> text;
-  std::getline(std::cin, text);
+  std::string text;
+  if (prompt.empty()) {
+    std::print(">>> ");
+    std::getline(std::cin, text);
+  } else {
+    std::println(">>> {}", prompt);
+    text = prompt;
+  }
 
   const auto tokens = tokenizer.encode(text);
-  std::cout << "[DEBUG] Encoded tokens: " << tokens << std::endl;
-  std::cout << "[DEBUG] Decoded text: " << tokenizer._debug_decode(tokens) << std::endl;
-
-  // ctx.forward(model, 0, 0);
-  std::cout << "[DEBUG] Forwarding prompt ..." << std::endl;
+  std::println("[DEBUG] Encoded {} tokens: {}", tokens.size(), tokens);
+  std::println("[DEBUG] Decoded text: {}", tokenizer._debug_decode(tokens));
 
   tinyllm::Stopwatch prefill_timer;
-  for (std::int32_t i = 0; i < tokens.size(); ++i) {
-    if (i + 1 < tokens.size()) {
-      ctx.forward_prefill(tokens[i], i);
-    } else {
-      ctx.forward(tokens[i], i);
-    }
-  }
-  std::cout << std::format("[DEBUG] Prefill completed in {:3f} ms.", prefill_timer.elapsed_ms()) << std::endl;
-  std::cout << std::format("[DEBUG] Prefill throughput: {:3f} tokens/s",
-                           tokens.size() / prefill_timer.elapsed_seconds())
-            << std::endl;
   tinyllm::Stopwatch answer_timer;
 
+  for (std::int32_t i = 0; i < tokens.size(); ++i) {
+    if (i + 1 < tokens.size()) {
+      ctx_ptr->forward_prefill(tokens[i], i);
+    } else {
+      answer_timer.reset();
+      ctx_ptr->forward(tokens[i], i);
+    }
+  }
+  double prefill_time = prefill_timer.elapsed_seconds();
+  std::println("[DEBUG] Prefill completed in {:3f} s, throughput {:3f} tok/s.", prefill_time,
+               tokens.size() / prefill_time);
+
   std::string answer_buffer;
-  std::size_t generate_tokens = 0;
-  for (std::int32_t i = 0; i < 4096; ++i) {
-    std::uint32_t token = ctx.sample();
-    generate_tokens += 1;
+  std::vector<double> generate_times;
+  generate_times.reserve(max_tokens + 1);
+
+  for (std::int32_t i = 0; i < max_tokens; ++i) {
+    std::uint32_t token = ctx_ptr->sample();
+    generate_times.emplace_back(answer_timer.elapsed_seconds());
     if (token == config.eos_token_id) {
       break;
+    }
+    if (i + 1 != max_tokens) {
+      ctx_ptr->forward(token, tokens.size() + i);
     }
     std::string decoded_token = tokenizer.vocab[token];
     answer_buffer += decoded_token;
     while (std::size_t length = tinyllm::utf8_to_codepoint(answer_buffer).first) {
-      std::cout << std::string_view(answer_buffer.data(), length) << std::flush;
+      std::print("{}", std::string_view(answer_buffer.data(), length));
+      std::flush(std::cout);
       answer_buffer.erase(0, length);
     }
-    ctx.forward(token, tokens.size() + i);
   }
   if (!answer_buffer.empty()) {
-    std::cout << answer_buffer << std::flush;
+    std::print("{}", answer_buffer);
+  }
+  if (generate_times.empty()) {
+    std::println("[DEBUG] No tokens generated.");
+    return 0;
   }
 
-  std::cout << std::endl;
-  std::cout << std::format("[DEBUG] Generated {} tokens.", generate_tokens) << std::endl;
-  std::cout << std::format("[DEBUG] Generate throughput: {:3f} tokens/s",
-                           generate_tokens / answer_timer.elapsed_seconds())
-            << std::endl;
+  double avg_time = generate_times.size() / generate_times.back();
+
+  std::println();
+  std::println("[DEBUG] Generated {} tokens in {:3f} s, average {:3f} tok/s.", generate_times.size(),
+               generate_times.back(), avg_time);
+  if (generate_times.size() >= 32) {
+    double avg_first32 = 32 / generate_times[31];
+    double avg_last32 = 32 / (generate_times.back() - generate_times[generate_times.size() - 32]);
+    std::println("[DEBUG] First 32 with {:3f} tok/s, last 32 with {:3f} tok/s", avg_first32, avg_last32);
+  }
 
   return 0;
 }

@@ -1,8 +1,8 @@
 #include "safetensors_reader.hpp"
 
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
+#include <print>
 
 namespace tinyllm {
 
@@ -24,7 +24,7 @@ void SafeTensorsReader::load_metadata(const std::filesystem::path &path, ArenaAl
   std::vector<char> v(metadata_size);
   is.read(v.data(), v.size());
 
-  std::cout << "[DEBUG] Loading metadata from: " << path << ", size " << (tensor_size >> 20) << " MB" << std::endl;
+  std::println("[DEBUG] Loading metadata from: {}, size {} MB", path.string(), (tensor_size >> 20));
 
   const auto metadata_json = nlohmann::json::parse(v);
 

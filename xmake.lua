@@ -13,9 +13,14 @@ if has_config("use_blas") then
 	add_requires("openblas")
 end
 
+add_requires("cuda", {system = true})
+add_requires("cxxopts")
+
 target("tiny-llm")
 	set_kind("binary")
     add_packages("nlohmann_json")
+    add_packages("cxxopts")
+	add_packages("cuda")
 	if has_config("use_blas") then
 		add_packages("openblas")
 		add_defines("TINYLLM_USE_BLAS")

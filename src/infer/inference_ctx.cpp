@@ -10,7 +10,7 @@ InferenceCtx::InferenceCtx(Model &model_, std::size_t kv_size, DataType kv_dtype
 
 InferenceCtx::InferenceCtx(ModelCuda &model, std::size_t kv_size, DataType kv_dtype) {
   if (model.dtype != DataType::F16 || kv_dtype != DataType::F16) {
-    throw std::runtime_error("Unsupported kv_dtype for GPU backend. Only F16 are supported.");
+    throw std::runtime_error("Unsupported kv_dtype for CUDA backend. Only F16 are supported.");
   }
   backend = std::make_unique<InferenceBackendCUDA>(model, kv_size, kv_dtype);
 }
