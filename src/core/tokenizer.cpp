@@ -7,40 +7,66 @@
 
 namespace tinyllm {
 
-TokenizerTrieNode::TokenizerTrieNode(std::int32_t id) : token_id(id) {}
-
-void TokenizerTrieNode::insert(const std::string_view word, std::int32_t token_id) {
-  TokenizerTrieNode *p = this;
-  for (const std::uint8_t c : word) {
-    const std::uint32_t c0 = c % 64, c1 = c / 64;
+void PopcountTrie::insert(const std::string_view word, std::int32_t token_id) {
+  Node *p = &root[std::uint8_t(word.front())];
+  for (std::size_t i = 1; i < word.size(); ++i) {
+    const std::uint8_t uc = std::uint8_t(word[i]);
+    const std::uint32_t c0 = uc % 64, c1 = uc / 64;
     const std::uint64_t mask = 1ULL << c0;
     auto &cmask = p->mask64[c1];
     auto &cc = p->children[c1];
-
+    int u = std::popcount(cmask & (mask - 1));
     if (cmask & mask) {
-      int u = std::popcount(cmask & (mask - 1));
       p = &cc[u];
-
     } else {
       cmask |= mask;
       int u = std::popcount(cmask & (mask - 1));
-      cc.insert(cc.begin() + u, TokenizerTrieNode{});
+      cc.insert(cc.begin() + u, Node{});
       p = &cc[u];
     }
   }
   p->token_id = token_id;
 }
 
-const TokenizerTrieNode *TokenizerTrieNode::get(std::uint8_t c) const {
-  const std::uint32_t c0 = c % 64, c1 = c / 64;
-  const std::uint64_t mask = 1ULL << c0;
-
-  if (mask & mask64[c1]) {
-    int u = std::popcount(mask64[c1] & (mask - 1));
-    return &children[c1][u];
-  } else {
-    return nullptr;
+std::pair<std::int32_t, std::int32_t> PopcountTrie::longest_match(const std::string_view word) const {
+  std::int32_t token_id = -1;
+  std::int32_t length = 0;
+  const Node *p = &root[std::uint8_t(word.front())];
+  for (std::size_t i = 1; i < word.size(); ++i) {
+    const std::uint8_t uc = std::uint8_t(word[i]);
+    const std::uint32_t c0 = uc % 64, c1 = uc / 64;
+    const std::uint64_t mask = 1ULL << c0;
+    const auto cmask = p->mask64[c1];
+    std::uint64_t u = std::popcount(cmask & (mask - 1));
+    if (cmask & mask) {
+      p = &p->children[c1][u];
+      if (p->token_id >= 0) {
+        token_id = p->token_id;
+        length = i + 1;
+      }
+    } else {
+      break;
+    }
   }
+  return {token_id, length};
+}
+
+std::size_t PopcountTrie::memory_usage() const {
+  std::size_t size = sizeof(PopcountTrie) - sizeof(root);
+  auto dfs_trie = [&](auto &&self, const Node &node) -> std::size_t {
+    std::size_t node_size = sizeof(node);
+    for (const auto &child : node.children) {
+      for (const auto &sub_node : child) {
+        node_size += self(self, sub_node);
+      }
+      node_size += (child.capacity() - child.size()) * sizeof(Node);
+    }
+    return node_size;
+  };
+  for (const auto &root_node : root) {
+    size += dfs_trie(dfs_trie, root_node);
+  }
+  return size;
 }
 
 Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
@@ -63,15 +89,18 @@ Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
 void Tokenizer::_add_token(const std::string &key, std::int32_t token_id) {
   std::string key_decoded;
   if (byte_fallback) {
-    if (key.front() == '<' && key.back() == '>') {
+    if (key.starts_with("<0x") && key.ends_with(">")) {
       auto get_hex_value = [](char c) -> int {
-        if (c >= '0' && c <= '9')
+        if (c >= '0' && c <= '9') {
           return c - '0';
-        if (c >= 'a' && c <= 'f')
-          return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F')
-          return c - 'A' + 10;
-        return -1;
+        } else {
+          c &= 0xDF; // Convert to uppercase
+          if (c >= 'A' && c <= 'F') {
+            return c - 'A' + 10;
+          } else {
+            return -1;
+          }
+        }
       };
       std::string s;
       for (std::size_t i = 3; i + 2 < key.size(); i += 2) {
@@ -93,7 +122,7 @@ void Tokenizer::_add_token(const std::string &key, std::int32_t token_id) {
   // std::cout << "[DEBUG] Tokenizer: key = `" << key << "`, token_id = " << token_id << ", decoded = `" << key_decoded
   //           << "`" << std::endl;
   vocab[token_id] = key_decoded;
-  root.insert(key_decoded, token_id);
+  trie.insert(key_decoded, token_id);
 }
 
 void Tokenizer::load_trie() {
@@ -128,25 +157,11 @@ std::vector<std::int32_t> Tokenizer::encode_raw(const std::string &text) {
   std::vector<std::int32_t> tokens;
   std::size_t i = 0;
   while (i < text.size()) {
-    const TokenizerTrieNode *p = &root, *valid_p = nullptr;
-    std::size_t j = i, valid_j = i;
-    while (j < text.size()) {
-      const auto uc = static_cast<std::uint8_t>(text[j]);
-      auto *nxt = p->get(uc);
-      if (!nxt) {
-        break;
-      } else {
-        p = nxt;
-        j += 1;
-        if (p->token_id >= 0) {
-          valid_p = p;
-          valid_j = j;
-        }
-      }
-    }
-    if (valid_p) {
-      tokens.push_back(valid_p->token_id);
-      i = valid_j;
+    const std::string_view sub = {text.begin() + i, text.end()};
+    auto [token_id, length] = trie.longest_match(sub);
+    if (token_id >= 0) {
+      tokens.push_back(token_id);
+      i += length;
     } else {
       tokens.push_back(-1);
       i += 1;
@@ -210,16 +225,7 @@ std::size_t Tokenizer::memory_usage() const {
   for (const auto &word : vocab) {
     size += word.capacity();
   }
-  auto dfs_trie = [](auto &&self, const TokenizerTrieNode &node) -> std::size_t {
-    std::size_t size = sizeof(TokenizerTrieNode);
-    for (const auto &c : node.children) {
-      for (const auto &c2 : c) {
-        size += self(self, c2);
-      }
-    }
-    return size;
-  };
-  size += dfs_trie(dfs_trie, root);
+  size += trie.memory_usage();
   return size;
 }
 

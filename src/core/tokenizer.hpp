@@ -7,23 +7,26 @@
 
 namespace tinyllm {
 
-struct TokenizerTrieNode {
-  std::int32_t token_id;
+struct PopcountTrie {
+  struct Node {
+    std::int32_t token_id = -1;
+    std::array<std::uint64_t, 4> mask64{};
+    std::array<std::vector<Node>, 4> children{};
+  };
 
-  std::array<std::uint64_t, 4> mask64{};
-  std::array<std::vector<TokenizerTrieNode>, 4> children{};
-
-  TokenizerTrieNode(std::int32_t id = -1);
+  std::array<Node, 256> root{};
 
   void insert(const std::string_view word, std::int32_t token_id);
 
-  const TokenizerTrieNode *get(std::uint8_t c) const;
+  std::pair<std::int32_t, std::int32_t> longest_match(const std::string_view data) const;
+
+  std::size_t memory_usage() const;
 };
 
 struct Tokenizer {
   Config &config;
   std::vector<std::string> vocab;
-  TokenizerTrieNode root;
+  PopcountTrie trie;
   std::int32_t bos_token_id = -1;
   std::int32_t eos_token_id = -1;
   bool byte_fallback = false;
