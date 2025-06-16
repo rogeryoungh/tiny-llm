@@ -20,6 +20,7 @@ int main(int argc, char *argv[]) {
       ("h,help", "Show help")
       ("m,model", "Path to the LLM folder", cxxopts::value<std::string>())
       ("prompt", "Prompt text to use for inference", cxxopts::value<std::string>()->default_value(""))
+      ("benchmark-prompt-size",  "The size of tokens in the benchmarking prompt, at least 32", cxxopts::value<std::size_t>()->default_value("0"))
       ("device", "Device to use for inference (cpu or cuda)", cxxopts::value<std::string>()->default_value("cuda"))
       ("kv-size", "Size of the key-value cache", cxxopts::value<std::size_t>()->default_value("4096"))
       ("max-tokens", "Maximum number of tokens to generate", cxxopts::value<std::size_t>()->default_value("4096"))
@@ -37,6 +38,7 @@ int main(int argc, char *argv[]) {
   auto device = result["device"].as<std::string>();
   auto kv_size = result["kv-size"].as<std::size_t>();
   auto max_tokens = result["max-tokens"].as<std::size_t>();
+  auto benchmark_prompt_size = result["benchmark-prompt-size"].as<std::size_t>();
 
   std::println("[DEBUG] Model path: {}", model_path.string());
   std::println("[DEBUG] Using device: {}", device);
@@ -82,14 +84,27 @@ int main(int argc, char *argv[]) {
 
   std::string text;
   if (prompt.empty()) {
-    std::print(">>> ");
-    std::getline(std::cin, text);
+    if (benchmark_prompt_size > 0) {
+      text = std::string("介绍一下杭州的美食");
+    } else {
+      std::print(">>> ");
+      std::getline(std::cin, text);
+    }
   } else {
     std::println(">>> {}", prompt);
     text = prompt;
   }
 
-  const auto tokens = tokenizer.encode(text);
+  std::vector<std::int32_t> tokens;
+  if (benchmark_prompt_size > 0) {
+    tokens = tokenizer.encode_padding(text, benchmark_prompt_size);
+    if (tokens.size() != benchmark_prompt_size) {
+      std::println("[ERROR] Expected at least {} tokens, got {}.", benchmark_prompt_size, tokens.size());
+      return 1;
+    }
+  } else {
+    tokens = tokenizer.encode(text);
+  }
   std::println("[DEBUG] Encoded {} tokens: {}", tokens.size(), tokens);
   std::println("[DEBUG] Decoded text: {}", tokenizer._debug_decode(tokens));
 
@@ -115,7 +130,7 @@ int main(int argc, char *argv[]) {
   for (std::int32_t i = 0; i < max_tokens; ++i) {
     std::uint32_t token = ctx_ptr->sample();
     generate_times.emplace_back(answer_timer.elapsed_seconds());
-    if (token == config.eos_token_id) {
+    if (token == config.eos_token_id && benchmark_prompt_size == 0) {
       break;
     }
     if (i + 1 != max_tokens) {

@@ -124,11 +124,8 @@ void Tokenizer::load_trie() {
   }
 }
 
-std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
+std::vector<std::int32_t> Tokenizer::encode_raw(const std::string &text) {
   std::vector<std::int32_t> tokens;
-  if (bos_token_id >= 0) {
-    tokens.push_back(bos_token_id);
-  }
   std::size_t i = 0;
   while (i < text.size()) {
     const TokenizerTrieNode *p = &root, *valid_p = nullptr;
@@ -155,6 +152,39 @@ std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
       i += 1;
     }
   }
+  return tokens;
+}
+
+std::vector<std::int32_t> Tokenizer::encode(const std::string &text) {
+  std::vector<std::int32_t> tokens;
+  if (bos_token_id >= 0) {
+    tokens.push_back(bos_token_id);
+  }
+  tokens.append_range(encode_raw(text));
+  if (eos_token_id >= 0) {
+    tokens.push_back(eos_token_id);
+  }
+  return tokens;
+}
+
+std::vector<std::int32_t> Tokenizer::encode_padding(const std::string &text, std::size_t padding_size) {
+  std::vector<std::int32_t> tokens_raw = encode_raw(text);
+  std::vector<std::int32_t> space_tokens = encode_raw(" ");
+  std::size_t eos_bos_size = (bos_token_id >= 0) + (eos_token_id >= 0);
+  std::int64_t needed_padding = padding_size - static_cast<std::int64_t>(tokens_raw.size() + eos_bos_size);
+  if (needed_padding <= 0) {
+    return tokens_raw;
+  }
+  std::size_t repeat = needed_padding / space_tokens.size();
+  std::vector<std::int32_t> tokens;
+  tokens.reserve(padding_size);
+  if (bos_token_id >= 0) {
+    tokens.push_back(bos_token_id);
+  }
+  for (std::size_t i = 0; i < repeat; ++i) {
+    tokens.append_range(space_tokens);
+  }
+  tokens.append_range(tokens_raw);
   if (eos_token_id >= 0) {
     tokens.push_back(eos_token_id);
   }

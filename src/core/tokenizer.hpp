@@ -34,6 +34,10 @@ struct Tokenizer {
 
   std::vector<std::int32_t> encode(const std::string &text);
 
+  std::vector<std::int32_t> encode_raw(const std::string &text);
+
+  std::vector<std::int32_t> encode_padding(const std::string &text, std::size_t padding_size);
+
   std::size_t memory_usage() const;
 
   std::string _debug_decode(const std::vector<std::int32_t> &tokens);
