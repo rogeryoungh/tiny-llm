@@ -14,7 +14,7 @@ struct PopcountTrie {
     std::array<std::vector<Node>, 4> children{};
   };
 
-  std::array<Node, 256> root{};
+  Node root{};
 
   void insert(const std::string_view word, std::int32_t token_id);
 
@@ -46,7 +46,7 @@ struct Tokenizer {
   std::string _debug_decode(const std::vector<std::int32_t> &tokens);
 
 protected:
-  void _add_token(const std::string &key, std::int32_t token_id);
+  std::string _decoded_token_key(const std::string &key) const;
 };
 
 } // namespace tinyllm

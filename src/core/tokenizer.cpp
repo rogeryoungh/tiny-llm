@@ -8,8 +8,8 @@
 namespace tinyllm {
 
 void PopcountTrie::insert(const std::string_view word, std::int32_t token_id) {
-  Node *p = &root[std::uint8_t(word.front())];
-  for (std::size_t i = 1; i < word.size(); ++i) {
+  Node *p = &root;
+  for (std::size_t i = 0; i < word.size(); ++i) {
     const std::uint8_t uc = std::uint8_t(word[i]);
     const std::uint32_t c0 = uc % 64, c1 = uc / 64;
     const std::uint64_t mask = 1ULL << c0;
@@ -31,8 +31,8 @@ void PopcountTrie::insert(const std::string_view word, std::int32_t token_id) {
 std::pair<std::int32_t, std::int32_t> PopcountTrie::longest_match(const std::string_view word) const {
   std::int32_t token_id = -1;
   std::int32_t length = 0;
-  const Node *p = &root[std::uint8_t(word.front())];
-  for (std::size_t i = 1; i < word.size(); ++i) {
+  const Node *p = &root;
+  for (std::size_t i = 0; i < word.size(); ++i) {
     const std::uint8_t uc = std::uint8_t(word[i]);
     const std::uint32_t c0 = uc % 64, c1 = uc / 64;
     const std::uint64_t mask = 1ULL << c0;
@@ -63,12 +63,9 @@ std::size_t PopcountTrie::memory_usage() const {
     }
     return node_size;
   };
-  for (const auto &root_node : root) {
-    size += dfs_trie(dfs_trie, root_node);
-  }
+  size += dfs_trie(dfs_trie, root);
   return size;
 }
-
 Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
   nlohmann::json tokenizer_config_json;
   std::ifstream file(config.model_path / "tokenizer_config.json");
@@ -86,9 +83,9 @@ Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
   }
 }
 
-void Tokenizer::_add_token(const std::string &key, std::int32_t token_id) {
-  std::string key_decoded;
+std::string Tokenizer::_decoded_token_key(const std::string &key) const {
   if (byte_fallback) {
+    char c0 = -1, c1 = -1;
     if (key.starts_with("<0x") && key.ends_with(">")) {
       auto get_hex_value = [](char c) -> int {
         if (c >= '0' && c <= '9') {
@@ -102,27 +99,17 @@ void Tokenizer::_add_token(const std::string &key, std::int32_t token_id) {
           }
         }
       };
-      std::string s;
-      for (std::size_t i = 3; i + 2 < key.size(); i += 2) {
-        int c0 = get_hex_value(key[i]);
-        int c1 = get_hex_value(key[i + 1]);
-        if (c0 < 0 || c1 < 0) {
-          key_decoded.clear();
-          break;
-        }
-        key_decoded += (c0 << 4) | c1;
-      }
+      c0 = get_hex_value(key[3]);
+      c1 = get_hex_value(key[4]);
+    }
+    if (c0 >= 0 && c1 >= 0) {
+      return std::string(1, (c0 << 4) | c1);
+    } else {
+      return replace_unicode_space(key);
     }
   } else {
-    key_decoded = gpt2_unicode_to_bytes(key);
+    return gpt2_unicode_to_bytes(key);
   }
-  if (key_decoded.empty()) {
-    key_decoded = replace_unicode_space(key);
-  }
-  // std::cout << "[DEBUG] Tokenizer: key = `" << key << "`, token_id = " << token_id << ", decoded = `" << key_decoded
-  //           << "`" << std::endl;
-  vocab[token_id] = key_decoded;
-  trie.insert(key_decoded, token_id);
 }
 
 void Tokenizer::load_trie() {
@@ -142,14 +129,16 @@ void Tokenizer::load_trie() {
   // Load vocabulary and other settings from the JSON
   for (const auto &[key, value] : vocab_json.items()) {
     auto token_id = value.get<std::int32_t>();
-    _add_token(key, token_id);
+    const auto decoded = _decoded_token_key(key);
+    trie.insert(decoded, token_id);
+    vocab[token_id] = decoded;
   }
   for (const auto &data : added_tokens) {
     auto key = data["content"].get<std::string>();
     auto token_id = data["id"].get<std::int32_t>();
-    if (vocab[token_id].empty()) {
-      _add_token(key, token_id);
-    }
+    const auto decoded = _decoded_token_key(key);
+    trie.insert(decoded, token_id);
+    vocab[token_id] = decoded;
   }
 }
 
