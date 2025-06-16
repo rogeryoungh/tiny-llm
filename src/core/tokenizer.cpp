@@ -78,15 +78,16 @@ std::int32_t StaticDATrie::_insert(const PopcountTrie::Node &node) {
   }
 
   std::array<std::int32_t, 4> children{};
+  std::array<std::int32_t, 64> child_ids{};
 
   for (std::size_t i = 0; i < 4; ++i) {
-    std::vector<std::int32_t> child_ids;
+    std::size_t child_count = 0;
     for (const auto &child : node.children[i]) {
       std::int32_t child_id = _insert(child);
-      child_ids.push_back(child_id);
+      child_ids[child_count++] = child_id;
     }
     children[i] = next.size();
-    next.insert_range(next.end(), child_ids);
+    next.insert(next.end(), child_ids.begin(), child_ids.begin() + child_count);
   }
   meta.emplace_back(id, node.mask64, children);
   return std::int32_t(meta.size()) - 1;
