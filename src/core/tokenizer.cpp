@@ -66,6 +66,68 @@ std::size_t PopcountTrie::memory_usage() const {
   size += dfs_trie(dfs_trie, root);
   return size;
 }
+
+void StaticDATrie::load_trie(const PopcountTrie &trie) { root_id = _insert(trie.root); }
+
+std::int32_t StaticDATrie::_insert(const PopcountTrie::Node &node) {
+  const std::uint64_t full_mask = node.mask64[0] | node.mask64[1] | node.mask64[2] | node.mask64[3];
+  const std::int32_t id = node.token_id;
+
+  if (full_mask == 0) {
+    return -id - 2;
+  }
+
+  std::array<std::int32_t, 4> children{};
+
+  for (std::size_t i = 0; i < 4; ++i) {
+    std::vector<std::int32_t> child_ids;
+    for (const auto &child : node.children[i]) {
+      std::int32_t child_id = _insert(child);
+      child_ids.push_back(child_id);
+    }
+    children[i] = next.size();
+    next.insert_range(next.end(), child_ids);
+  }
+  meta.emplace_back(id, node.mask64, children);
+  return std::int32_t(meta.size()) - 1;
+}
+
+std::size_t StaticDATrie::memory_usage() const {
+  std::size_t size = sizeof(StaticDATrie);
+  size += meta.size() * sizeof(Meta);
+  size += next.size() * sizeof(std::int32_t);
+  return size;
+}
+
+std::pair<std::int32_t, std::int32_t> StaticDATrie::longest_match(const std::string_view data) const {
+  std::int32_t token_id = -1;
+  std::int32_t length = 0;
+
+  std::int32_t p = root_id;
+  for (std::size_t i = 0; i < data.size(); ++i) {
+    const std::uint8_t uc = std::uint8_t(data[i]);
+    const std::uint32_t c0 = uc % 64, c1 = uc / 64;
+    const std::uint64_t mask = 1ULL << c0;
+    const auto cmask = meta[p].mask64[c1];
+    if (cmask & mask) {
+      std::uint64_t u = std::popcount(cmask & (mask - 1));
+      p = next[meta[p].children[c1] + u];
+      if (p < -1) {
+        token_id = -p - 2;
+        length = i + 1;
+        break;
+      }
+      if (meta[p].token_id >= 0) {
+        token_id = meta[p].token_id;
+        length = i + 1;
+      }
+    } else {
+      break;
+    }
+  }
+  return {token_id, length};
+}
+
 Tokenizer::Tokenizer(Config &cfg) : config(cfg) {
   nlohmann::json tokenizer_config_json;
   std::ifstream file(config.model_path / "tokenizer_config.json");
@@ -126,20 +188,23 @@ void Tokenizer::load_trie() {
 
   byte_fallback = tokenizer_json["model"].value("byte_fallback", false);
 
+  PopcountTrie popcnt_trie;
+
   // Load vocabulary and other settings from the JSON
   for (const auto &[key, value] : vocab_json.items()) {
     auto token_id = value.get<std::int32_t>();
     const auto decoded = _decoded_token_key(key);
-    trie.insert(decoded, token_id);
+    popcnt_trie.insert(decoded, token_id);
     vocab[token_id] = decoded;
   }
   for (const auto &data : added_tokens) {
     auto key = data["content"].get<std::string>();
     auto token_id = data["id"].get<std::int32_t>();
     const auto decoded = _decoded_token_key(key);
-    trie.insert(decoded, token_id);
+    popcnt_trie.insert(decoded, token_id);
     vocab[token_id] = decoded;
   }
+  trie.load_trie(popcnt_trie);
 }
 
 std::vector<std::int32_t> Tokenizer::encode_raw(const std::string &text) {
