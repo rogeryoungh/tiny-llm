@@ -33,18 +33,18 @@ def process_model_folder(
 
     os.makedirs(dst_folder, exist_ok=True)
 
+    safetensor_list = set()
     index_filename = "model.safetensors.index.json"
     index_src_path = os.path.join(src_folder, index_filename)
-    if not os.path.isfile(index_src_path):
-        raise FileNotFoundError(f"{index_src_path} does not exists.")
+    if os.path.exists(index_src_path):
+        with open(index_src_path, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
 
-    with open(index_src_path, "r", encoding="utf-8") as f:
-        index_data = json.load(f)
-
-    safetensor_list = set()
-    weight_map = index_data.get("weight_map", {})
-    for _, shard_path in weight_map.items():
-        safetensor_list.add(shard_path)
+        weight_map = index_data.get("weight_map", {})
+        for _, shard_path in weight_map.items():
+            safetensor_list.add(shard_path)
+    else:
+        safetensor_list.add("model.safetensors")
 
     print(safetensor_list)
 
