@@ -1,5 +1,6 @@
 #include "infer.hpp"
 #include "../../utils/precision.hpp"
+#include <cfloat>
 
 namespace tinyllm {
 
@@ -29,21 +30,19 @@ void rms_norm_fp32_weight_fp16(float *out, const float *x, const fp16_t *weight,
 }
 
 void softmax_fp32(float *out, const float *x, std::size_t size) {
-  float max_val = x[0];
-  for (std::size_t i = 1; i < size; ++i) {
+  float max_val = -FLT_MAX;
+  float sum_exp = 0.0f;
+  for (std::size_t i = 0; i < size; ++i) {
     if (x[i] > max_val) {
+      sum_exp = sum_exp * std::exp(max_val - x[i]) + 1.0f;
       max_val = x[i];
+    } else {
+      sum_exp += std::exp(x[i] - max_val);
     }
   }
 
-  float sum = 0.0f;
   for (std::size_t i = 0; i < size; ++i) {
-    out[i] = std::exp(x[i] - max_val);
-    sum += out[i];
-  }
-
-  for (std::size_t i = 0; i < size; ++i) {
-    out[i] /= sum;
+    out[i] = std::exp(x[i] - max_val) / sum_exp;
   }
 }
 
@@ -78,15 +77,26 @@ template <typename T>
 static void _attention_softmax_fp32(float *xout, float *atth, const float *qh, const T *kh, const T *vh,
                                     std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
   std::size_t kv_stride = n_kv_heads * head_dim;
+  float max_val = -FLT_MAX;
+  float sum_exp = 0.0f;
   for (std::size_t i = 0; i < kv_len; ++i) {
     float sum = 0.0f;
     for (std::size_t j = 0; j < head_dim; ++j) {
       sum += qh[j] * _cvt_to_fp32<T>(kh[i * kv_stride + j]);
     }
-    atth[i] = sum / std::sqrt(head_dim);
+    float ai = sum / std::sqrt(head_dim);
+    atth[i] = ai;
+    if (ai > max_val) {
+      sum_exp = sum_exp * std::exp(max_val - ai) + 1.0f;
+      max_val = ai;
+    } else {
+      sum_exp += std::exp(ai - max_val);
+    }
   }
 
-  softmax_fp32(atth, atth, kv_len);
+  for (std::size_t i = 0; i < kv_len; ++i) {
+    atth[i] = std::exp(atth[i] - max_val) / sum_exp;
+  }
 
   for (std::size_t i = 0; i < head_dim; ++i) {
     float sum = 0.0f;
