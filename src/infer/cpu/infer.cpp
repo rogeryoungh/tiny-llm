@@ -74,52 +74,56 @@ void rope_inplace_fp32(float *x, std::size_t head_dim, std::size_t pos, float th
 }
 
 template <typename T>
-static void _attention_softmax_fp32(float *xout, float *atth, const float *qh, const T *kh, const T *vh,
-                                    std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
+static void _attention_softmax_fp32(float *xout, const float *qh, const T *kh, const T *vh, std::size_t head_dim,
+                                    std::size_t n_kv_heads, std::size_t kv_len) {
   std::size_t kv_stride = n_kv_heads * head_dim;
   float max_val = -FLT_MAX;
   float sum_exp = 0.0f;
+  std::fill_n(xout, head_dim, 0.0f);
   for (std::size_t i = 0; i < kv_len; ++i) {
     float sum = 0.0f;
     for (std::size_t j = 0; j < head_dim; ++j) {
       sum += qh[j] * _cvt_to_fp32<T>(kh[i * kv_stride + j]);
     }
     float ai = sum / std::sqrt(head_dim);
-    atth[i] = ai;
     if (ai > max_val) {
-      sum_exp = sum_exp * std::exp(max_val - ai) + 1.0f;
+      float exp_max_ai = std::exp(max_val - ai);
+      float exp = sum_exp * exp_max_ai + 1.0f;
+      float scale1 = exp_max_ai * sum_exp / exp;
+      float scale2 = 1.0f / exp;
+      for (std::size_t j = 0; j < head_dim; ++j) {
+        float hj = _cvt_to_fp32(vh[i * kv_stride + j]);
+        xout[j] = xout[j] * scale1 + hj * scale2;
+      }
+      sum_exp = exp;
       max_val = ai;
     } else {
-      sum_exp += std::exp(ai - max_val);
+      float exp_max_ai = std::exp(ai - max_val);
+      float exp = sum_exp + exp_max_ai;
+      float scale1 = sum_exp / exp;
+      float scale2 = exp_max_ai / exp;
+      for (std::size_t j = 0; j < head_dim; ++j) {
+        float hj = _cvt_to_fp32(vh[i * kv_stride + j]);
+        xout[j] = xout[j] * scale1 + hj * scale2;
+      }
+      sum_exp = exp;
     }
-  }
-
-  for (std::size_t i = 0; i < kv_len; ++i) {
-    atth[i] = std::exp(atth[i] - max_val) / sum_exp;
-  }
-
-  for (std::size_t i = 0; i < head_dim; ++i) {
-    float sum = 0.0f;
-    for (std::size_t j = 0; j < kv_len; ++j) {
-      sum += atth[j] * _cvt_to_fp32<T>(vh[j * kv_stride + i]);
-    }
-    xout[i] = sum;
   }
 }
 
 void attention_softmax_fp32(float *xout, float *atth, const float *qh, const float *kh, const float *vh,
                             std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
-  _attention_softmax_fp32(xout, atth, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+  _attention_softmax_fp32(xout, qh, kh, vh, head_dim, n_kv_heads, kv_len);
 }
 
 void attention_softmax_fp32_kv_bf16(float *xout, float *atth, const float *qh, const bf16_t *kh, const bf16_t *vh,
                                     std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
-  _attention_softmax_fp32(xout, atth, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+  _attention_softmax_fp32(xout, qh, kh, vh, head_dim, n_kv_heads, kv_len);
 }
 
 void attention_softmax_fp32_kv_fp16(float *xout, float *atth, const float *qh, const fp16_t *kh, const fp16_t *vh,
                                     std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
-  _attention_softmax_fp32(xout, atth, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+  _attention_softmax_fp32(xout, qh, kh, vh, head_dim, n_kv_heads, kv_len);
 }
 
 } // namespace tinyllm
