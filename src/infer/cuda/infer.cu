@@ -113,7 +113,7 @@ __global__ void rms_norm_fp32_b_fp16_kernel(const float *x, half const *weight, 
 }
 
 void rms_norm_fp32_b_fp16(float *out, const float *x, const void *weight, int size, int num_batches, float eps) {
-  int blocksize = max(min(1024, bit_ceil(size)), 32);
+  int blocksize = std::max(std::min(1024, bit_ceil(size)), 32);
 
   dim3 grid(1, num_batches);
   dim3 block(blocksize);
@@ -277,26 +277,67 @@ __global__ void mh_compute_raw_scores(float *att, const float *q, const half *k,
 __global__ void mh_softmax_inplace(float *att, int kv_len) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   int stride = blockDim.x * gridDim.x;
+  const int lane = threadIdx.x % warpSize;
+  const int wid = threadIdx.x / warpSize;
+
+  __shared__ float shared_max[32];
+  __shared__ float shared_sum[32];
 
   int head = blockIdx.y;
   float *atth = att + head * kv_len;
 
-  float max = -FLT_MAX;
-  for (int i = tid; i < kv_len; i += stride)
-    max = fmaxf(max, atth[i]);
-
-  max = block_reduce_max(max);
-
-  float sum = 0.0f;
+  float max_val = -FLT_MAX;
+  float sum_exp = 0.0f;
   for (int i = tid; i < kv_len; i += stride) {
-    float e = expf(atth[i] - max);
-    atth[i] = e;
-    sum += e;
+    float ai = atth[i];
+    float max = fmaxf(max_val, ai);
+    sum_exp = sum_exp * expf(max_val - max) + expf(ai - max);
+    max_val = max;
   }
-  sum = block_reduce_sum(sum);
 
-  for (int i = tid; i < kv_len; i += stride)
-    atth[i] /= sum;
+  for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
+    float max_other = __shfl_down_sync(0xFFFFFFFF, max_val, offset);
+    float sum_other = __shfl_down_sync(0xFFFFFFFF, sum_exp, offset);
+
+    float max = fmaxf(max_val, max_other);
+    sum_exp = sum_exp * expf(max_val - max) + sum_other * expf(max_other - max);
+    max_val = max;
+  }
+
+  if (lane == 0) {
+    shared_max[wid] = max_val;
+    shared_sum[wid] = sum_exp;
+  }
+
+  __syncthreads();
+
+  if (wid == 0) {
+    int warp_count = (blockDim.x + warpSize - 1) / warpSize;
+    max_val = (threadIdx.x < warp_count) ? shared_max[lane] : -FLT_MAX;
+    sum_exp = (threadIdx.x < warp_count) ? shared_sum[lane] : 0.0f;
+
+    for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
+      float max_other = __shfl_down_sync(0xFFFFFFFF, max_val, offset);
+      float sum_other = __shfl_down_sync(0xFFFFFFFF, sum_exp, offset);
+      float max = fmaxf(max_val, max_other);
+      sum_exp = sum_exp * expf(max_val - max) + sum_other * expf(max_other - max);
+      max_val = max;
+    }
+
+    if (lane == 0) {
+      shared_max[0] = max_val;
+      shared_sum[0] = sum_exp;
+    }
+  }
+  __syncthreads();
+
+  max_val = shared_max[0];
+  sum_exp = shared_sum[0];
+
+  for (int i = tid; i < kv_len; i += stride) {
+    float ai = atth[i];
+    atth[i] = expf(ai - max_val) / sum_exp;
+  }
 }
 
 __global__ void mh_compute_weighted_sum(float *out, const float *attn, const half *v, int head_dim, int n_kv_heads,

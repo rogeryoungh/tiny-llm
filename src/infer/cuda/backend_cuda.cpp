@@ -62,13 +62,13 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
   const bool has_qk_norm = block.attn_q_norm;
 
   if (has_qkv_bias) {
-    cuda::matrix_mul_vec_bias_fp32_b_fp16(q, xb, block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
-    cuda::matrix_mul_vec_bias_fp32_b_fp16(k, xb, block.attn_k, block.attn_k_bias, config.hidden_size, kv_dim);
-    cuda::matrix_mul_vec_bias_fp32_b_fp16(v, xb, block.attn_v, block.attn_v_bias, config.hidden_size, kv_dim);
+    cuda::gemv_bias_fp32_b_fp16(q, xb, block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
+    cuda::gemv_bias_fp32_b_fp16(k, xb, block.attn_k, block.attn_k_bias, config.hidden_size, kv_dim);
+    cuda::gemv_bias_fp32_b_fp16(v, xb, block.attn_v, block.attn_v_bias, config.hidden_size, kv_dim);
   } else {
-    cuda::matrix_mul_vec_fp32_b_fp16(q, xb, block.attn_q, config.hidden_size, q_dim);
-    cuda::matrix_mul_vec_fp32_b_fp16(k, xb, block.attn_k, config.hidden_size, kv_dim);
-    cuda::matrix_mul_vec_fp32_b_fp16(v, xb, block.attn_v, config.hidden_size, kv_dim);
+    cuda::gemv_fp32_b_fp16(q, xb, block.attn_q, config.hidden_size, q_dim);
+    cuda::gemv_fp32_b_fp16(k, xb, block.attn_k, config.hidden_size, kv_dim);
+    cuda::gemv_fp32_b_fp16(v, xb, block.attn_v, config.hidden_size, kv_dim);
   }
 
   if (has_qk_norm) {
@@ -94,7 +94,7 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
                                   config.num_key_value_heads, kv_len);
 
   // 4. Combine attention outputs
-  cuda::matrix_mul_vec_fp32_b_fp16(xb, xb2, block.attn_o, q_dim, config.hidden_size);
+  cuda::gemv_fp32_b_fp16(xb, xb2, block.attn_o, q_dim, config.hidden_size);
 
   cuda::vec_add_inplace_fp32(x, xb, config.hidden_size);
 
@@ -102,13 +102,13 @@ void InferenceBackendCUDA::forward_block(std::size_t block_id, std::int32_t pos,
   cuda::rms_norm_fp32_b_fp16(xb, x, block.post_norm, config.hidden_size, 1, config.rms_norm_eps);
 
   // 6. MLP
-  cuda::matrix_mul_vec_fp32_b_fp16(hb, xb, block.mlp_gate, config.hidden_size, config.intermediate_size);
-  cuda::matrix_mul_vec_fp32_b_fp16(hb2, xb, block.mlp_up, config.hidden_size, config.intermediate_size);
+  cuda::gemv_fp32_b_fp16(hb, xb, block.mlp_gate, config.hidden_size, config.intermediate_size);
+  cuda::gemv_fp32_b_fp16(hb2, xb, block.mlp_up, config.hidden_size, config.intermediate_size);
 
   cuda::swiglu_fp32(reinterpret_cast<float *>(hb), reinterpret_cast<const float *>(hb2),
                     reinterpret_cast<const float *>(hb), config.intermediate_size);
 
-  cuda::matrix_mul_vec_fp32_b_fp16(xb2, hb, block.mlp_down, config.intermediate_size, config.hidden_size);
+  cuda::gemv_fp32_b_fp16(xb2, hb, block.mlp_down, config.intermediate_size, config.hidden_size);
 
   cuda::vec_add_inplace_fp32(x, xb2, config.hidden_size);
 }
@@ -134,7 +134,7 @@ void InferenceBackendCUDA::forward(std::int32_t token, std::int32_t pos) {
   cuda::rms_norm_fp32_b_fp16(x, x, model.weight.norm, config.hidden_size, 1, config.rms_norm_eps);
 
   // 4. Compute logits
-  cuda::matrix_mul_vec_fp32_b_fp16(logits, x, model.weight.lm_head, config.hidden_size, config.vocab_size);
+  cuda::gemv_fp32_b_fp16(logits, x, model.weight.lm_head, config.hidden_size, config.vocab_size);
   cuda::check_and_sync();
 }
 

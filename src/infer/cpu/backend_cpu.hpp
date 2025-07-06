@@ -41,9 +41,9 @@ protected:
 
   void _rms_norm(float *out, const float *x, const Tensor &weight, std::size_t size, float eps);
 
-  void _matrix_mul_vec(float *out, const float *a, const Tensor &weight, std::size_t m, std::size_t n);
+  void _gemv(float *out, const float *a, const Tensor &weight, std::size_t m, std::size_t n);
 
-  void _matrix_mul_vec_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias, std::size_t m,
+  void _gemv_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias, std::size_t m,
                             std::size_t n);
 };
 

@@ -38,25 +38,25 @@ void InferenceBackendCPU::_rms_norm(float *out, const float *x, const Tensor &we
   }
 }
 
-void InferenceBackendCPU::_matrix_mul_vec(float *out, const float *a, const Tensor &weight, std::size_t m,
+void InferenceBackendCPU::_gemv(float *out, const float *a, const Tensor &weight, std::size_t m,
                                           std::size_t n) {
   if (model.dtype == DataType::BF16) {
-    matrix_mul_vec_fp32_b_bf16(out, a, weight.as<bf16_t>(), m, n);
+    gemv_fp32_b_bf16(out, a, weight.as<bf16_t>(), m, n);
   } else if (model.dtype == DataType::F16) {
-    matrix_mul_vec_fp32_b_fp16(out, a, weight.as<fp16_t>(), m, n);
+    gemv_fp32_b_fp16(out, a, weight.as<fp16_t>(), m, n);
   } else {
-    matrix_mul_vec_fp32(out, a, weight.as<float>(), m, n);
+    gemv_fp32(out, a, weight.as<float>(), m, n);
   }
 }
 
-void InferenceBackendCPU::_matrix_mul_vec_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias,
+void InferenceBackendCPU::_gemv_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias,
                                                std::size_t m, std::size_t n) {
   if (model.dtype == DataType::BF16) {
-    matrix_mul_vec_bias_fp32_b_bf16(out, a, weight.as<bf16_t>(), bias.as<bf16_t>(), m, n);
+    gemv_bias_fp32_b_bf16(out, a, weight.as<bf16_t>(), bias.as<bf16_t>(), m, n);
   } else if (model.dtype == DataType::F16) {
-    matrix_mul_vec_bias_fp32_b_fp16(out, a, weight.as<fp16_t>(), bias.as<fp16_t>(), m, n);
+    gemv_bias_fp32_b_fp16(out, a, weight.as<fp16_t>(), bias.as<fp16_t>(), m, n);
   } else {
-    matrix_mul_vec_bias_fp32(out, a, weight.as<float>(), bias.as<float>(), m, n);
+    gemv_bias_fp32(out, a, weight.as<float>(), bias.as<float>(), m, n);
   }
 }
 
@@ -74,13 +74,13 @@ void InferenceBackendCPU::forward_block(const Model::Block &block, Tensor &kc, T
   const bool has_qk_norm = !block.attn_q_norm.data.empty();
 
   if (has_qkv_bias) {
-    _matrix_mul_vec_bias(q.as<float>(), xb.as<float>(), block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
-    _matrix_mul_vec_bias(k.as<float>(), xb.as<float>(), block.attn_k, block.attn_k_bias, config.hidden_size, kv_dim);
-    _matrix_mul_vec_bias(v.as<float>(), xb.as<float>(), block.attn_v, block.attn_v_bias, config.hidden_size, kv_dim);
+    _gemv_bias(q.as<float>(), xb.as<float>(), block.attn_q, block.attn_q_bias, config.hidden_size, q_dim);
+    _gemv_bias(k.as<float>(), xb.as<float>(), block.attn_k, block.attn_k_bias, config.hidden_size, kv_dim);
+    _gemv_bias(v.as<float>(), xb.as<float>(), block.attn_v, block.attn_v_bias, config.hidden_size, kv_dim);
   } else {
-    _matrix_mul_vec(q.as<float>(), xb.as<float>(), block.attn_q, config.hidden_size, q_dim);
-    _matrix_mul_vec(k.as<float>(), xb.as<float>(), block.attn_k, config.hidden_size, kv_dim);
-    _matrix_mul_vec(v.as<float>(), xb.as<float>(), block.attn_v, config.hidden_size, kv_dim);
+    _gemv(q.as<float>(), xb.as<float>(), block.attn_q, config.hidden_size, q_dim);
+    _gemv(k.as<float>(), xb.as<float>(), block.attn_k, config.hidden_size, kv_dim);
+    _gemv(v.as<float>(), xb.as<float>(), block.attn_v, config.hidden_size, kv_dim);
   }
 
   if (has_qk_norm) {
@@ -157,7 +157,7 @@ void InferenceBackendCPU::forward_block(const Model::Block &block, Tensor &kc, T
   }
 
   // 4. Combine attention outputs
-  _matrix_mul_vec(xb.as<float>(), xb2.as<float>(), block.attn_o, q_dim, config.hidden_size);
+  _gemv(xb.as<float>(), xb2.as<float>(), block.attn_o, q_dim, config.hidden_size);
 
   for (std::int32_t i = 0; i < config.hidden_size; ++i) {
     x.as<float>()[i] += xb.as<float>()[i];
@@ -167,12 +167,12 @@ void InferenceBackendCPU::forward_block(const Model::Block &block, Tensor &kc, T
   _rms_norm(xb.as<float>(), x.as<float>(), block.post_norm, config.hidden_size, config.rms_norm_eps);
 
   // 6. MLP
-  _matrix_mul_vec(hb.as<float>(), xb.as<float>(), block.mlp_gate, config.hidden_size, config.intermediate_size);
-  _matrix_mul_vec(hb2.as<float>(), xb.as<float>(), block.mlp_up, config.hidden_size, config.intermediate_size);
+  _gemv(hb.as<float>(), xb.as<float>(), block.mlp_gate, config.hidden_size, config.intermediate_size);
+  _gemv(hb2.as<float>(), xb.as<float>(), block.mlp_up, config.hidden_size, config.intermediate_size);
   for (std::int32_t i = 0; i < config.intermediate_size; ++i) {
     hb.as<float>()[i] = silu_fp32(hb.as<float>()[i]) * hb2.as<float>()[i];
   }
-  _matrix_mul_vec(xb2.as<float>(), hb.as<float>(), block.mlp_down, config.intermediate_size, config.hidden_size);
+  _gemv(xb2.as<float>(), hb.as<float>(), block.mlp_down, config.intermediate_size, config.hidden_size);
 
   for (std::int32_t i = 0; i < config.hidden_size; ++i) {
     x.as<float>()[i] += xb2.as<float>()[i];
@@ -208,7 +208,7 @@ void InferenceBackendCPU::forward(std::int32_t token, std::int32_t pos) {
   _rms_norm(x.as<float>(), x.as<float>(), model.weight.norm, config.hidden_size, config.rms_norm_eps);
 
   // 4. Compute logits
-  _matrix_mul_vec(logits.as<float>(), x.as<float>(), model.weight.lm_head, config.hidden_size, config.vocab_size);
+  _gemv(logits.as<float>(), x.as<float>(), model.weight.lm_head, config.hidden_size, config.vocab_size);
 }
 
 void InferenceBackendCPU::forward_prefill(std::int32_t token, std::int32_t pos) {

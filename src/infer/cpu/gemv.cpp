@@ -7,7 +7,7 @@
 namespace tinyllm {
 
 template <typename T>
-static void matrix_mul_vec_fp32_naive(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
+static void gemv_fp32_naive(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0.0f;
     const T *b0 = b + i * m;
@@ -21,7 +21,7 @@ static void matrix_mul_vec_fp32_naive(float *out, const float *a, const T *b, st
 }
 
 template <typename T>
-static void matrix_mul_vec_bias_fp32_naive(float *out, const float *a, const T *b, const T *bias, std::size_t m,
+static void gemv_bias_fp32_naive(float *out, const float *a, const T *b, const T *bias, std::size_t m,
                                            std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0;
@@ -36,7 +36,7 @@ static void matrix_mul_vec_bias_fp32_naive(float *out, const float *a, const T *
 }
 
 template <typename T>
-static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
+static void gemv_fp32_threaded(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
   std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
   if (num_threads == 0)
     num_threads = 4;
@@ -48,7 +48,7 @@ static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const T *b,
     std::size_t end = std::min(i + chunk_size, n);
     if (i >= end)
       break;
-    threads.emplace_back(matrix_mul_vec_fp32_naive<T>, out + i, a, b + i * m, m, end - i);
+    threads.emplace_back(gemv_fp32_naive<T>, out + i, a, b + i * m, m, end - i);
   }
 
   for (auto &thread : threads) {
@@ -57,7 +57,7 @@ static void matrix_mul_vec_fp32_threaded(float *out, const float *a, const T *b,
 }
 
 template <typename T>
-static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const T *b, const T *bias, std::size_t m,
+static void gemv_bias_fp32_threaded(float *out, const float *a, const T *b, const T *bias, std::size_t m,
                                               std::size_t n) {
   std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
   if (num_threads == 0)
@@ -70,7 +70,7 @@ static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const 
     std::size_t end = std::min(i + chunk_size, n);
     if (i >= end)
       break;
-    threads.emplace_back(matrix_mul_vec_bias_fp32_naive<T>, out + i, a, b + i * m, bias + i, m, end - i);
+    threads.emplace_back(gemv_bias_fp32_naive<T>, out + i, a, b + i * m, bias + i, m, end - i);
   }
 
   for (auto &thread : threads) {
@@ -80,47 +80,47 @@ static void matrix_mul_vec_bias_fp32_threaded(float *out, const float *a, const 
 
 #ifdef TINYLLM_USE_OPENBLAS
 #include <cblas.h>
-static void matrix_mul_vec_fp32_blas(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
+static void gemv_fp32_blas(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
   cblas_sgemv(CblasRowMajor, CblasNoTrans, m, n, 1.0f, a, n, b, 1, 0.0f, out, 1);
 }
 #endif
 
-void matrix_mul_vec_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
+void gemv_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n) {
 #ifdef TINYLLM_USE_OPENBLAS
-  matrix_mul_vec_fp32_blas(out, a, b, m, n);
+  gemv_fp32_blas(out, a, b, m, n);
 #else
-  matrix_mul_vec_fp32_threaded(out, a, b, m, n);
+  gemv_fp32_threaded(out, a, b, m, n);
 #endif
 }
 
-void matrix_mul_vec_fp32_b_bf16(float *out, const float *a, const bf16_t *b, std::size_t m, std::size_t n) {
+void gemv_fp32_b_bf16(float *out, const float *a, const bf16_t *b, std::size_t m, std::size_t n) {
 #ifdef TINYLLM_USE_OPENBLAS
-  matrix_mul_vec_fp32_blas(out, a, b, m, n);
+  gemv_fp32_blas(out, a, b, m, n);
 #else
-  matrix_mul_vec_fp32_threaded(out, a, b, m, n);
+  gemv_fp32_threaded(out, a, b, m, n);
 #endif
 }
-void matrix_mul_vec_fp32_b_fp16(float *out, const float *a, const fp16_t *b, std::size_t m, std::size_t n) {
+void gemv_fp32_b_fp16(float *out, const float *a, const fp16_t *b, std::size_t m, std::size_t n) {
 #ifdef TINYLLM_USE_OPENBLAS
-  matrix_mul_vec_fp32_blas(out, a, b, m, n);
+  gemv_fp32_blas(out, a, b, m, n);
 #else
-  matrix_mul_vec_fp32_threaded(out, a, b, m, n);
+  gemv_fp32_threaded(out, a, b, m, n);
 #endif
 }
 
-void matrix_mul_vec_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m,
+void gemv_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m,
                               std::size_t n) {
-  matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
+  gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
-void matrix_mul_vec_bias_fp32_b_bf16(float *out, const float *a, const bf16_t *b, const bf16_t *bias, std::size_t m,
+void gemv_bias_fp32_b_bf16(float *out, const float *a, const bf16_t *b, const bf16_t *bias, std::size_t m,
                                      std::size_t n) {
-  matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
+  gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
-void matrix_mul_vec_bias_fp32_b_fp16(float *out, const float *a, const fp16_t *b, const fp16_t *bias, std::size_t m,
+void gemv_bias_fp32_b_fp16(float *out, const float *a, const fp16_t *b, const fp16_t *bias, std::size_t m,
                                      std::size_t n) {
-  matrix_mul_vec_bias_fp32_threaded(out, a, b, bias, m, n);
+  gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
 } // namespace tinyllm

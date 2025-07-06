@@ -6,7 +6,7 @@
 
 namespace tinyllm::cuda {
 
-__global__ void matrix_mul_vec_fp32_b_fp16_kernel(const float *a, const half *b, float *out, int m, int n) {
+__global__ void gemv_fp32_b_fp16_kernel(const float *a, const half *b, float *out, int m, int n) {
   const int col = blockIdx.x;
   if (col >= n)
     return;
@@ -43,12 +43,12 @@ __global__ void matrix_mul_vec_fp32_b_fp16_kernel(const float *a, const half *b,
   }
 }
 
-void matrix_mul_vec_fp32_b_fp16(float *out, const float *a, const void *b, int m, int n) {
+void gemv_fp32_b_fp16(float *out, const float *a, const void *b, int m, int n) {
   constexpr int WARP_SIZE = 32;
-  matrix_mul_vec_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b), out, m, n);
+  gemv_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b), out, m, n);
 }
 
-__global__ void matrix_mul_vec_bias_fp32_b_fp16_kernel(const float *a, const half *b, const half *bias, float *out,
+__global__ void gemv_bias_fp32_b_fp16_kernel(const float *a, const half *b, const half *bias, float *out,
                                                        int m, int n) {
   const int col = blockIdx.x;
   if (col >= n)
@@ -85,9 +85,9 @@ __global__ void matrix_mul_vec_bias_fp32_b_fp16_kernel(const float *a, const hal
   }
 }
 
-void matrix_mul_vec_bias_fp32_b_fp16(float *out, const float *a, const void *b, const void *bias, int m, int n) {
+void gemv_bias_fp32_b_fp16(float *out, const float *a, const void *b, const void *bias, int m, int n) {
   constexpr int WARP_SIZE = 32;
-  matrix_mul_vec_bias_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b),
+  gemv_bias_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b),
                                                            reinterpret_cast<const half *>(bias), out, m, n);
 }
 
