@@ -48,8 +48,8 @@ void gemv_fp32_b_fp16(float *out, const float *a, const void *b, int m, int n) {
   gemv_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b), out, m, n);
 }
 
-__global__ void gemv_bias_fp32_b_fp16_kernel(const float *a, const half *b, const half *bias, float *out,
-                                                       int m, int n) {
+__global__ void gemv_bias_fp32_b_fp16_kernel(const float *a, const half *b, const half *bias, float *out, int m,
+                                             int n) {
   const int col = blockIdx.x;
   if (col >= n)
     return;
@@ -88,7 +88,7 @@ __global__ void gemv_bias_fp32_b_fp16_kernel(const float *a, const half *b, cons
 void gemv_bias_fp32_b_fp16(float *out, const float *a, const void *b, const void *bias, int m, int n) {
   constexpr int WARP_SIZE = 32;
   gemv_bias_fp32_b_fp16_kernel<<<n, WARP_SIZE>>>(a, reinterpret_cast<const half *>(b),
-                                                           reinterpret_cast<const half *>(bias), out, m, n);
+                                                 reinterpret_cast<const half *>(bias), out, m, n);
 }
 
 } // namespace tinyllm::cuda

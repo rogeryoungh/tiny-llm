@@ -38,8 +38,7 @@ void InferenceBackendCPU::_rms_norm(float *out, const float *x, const Tensor &we
   }
 }
 
-void InferenceBackendCPU::_gemv(float *out, const float *a, const Tensor &weight, std::size_t m,
-                                          std::size_t n) {
+void InferenceBackendCPU::_gemv(float *out, const float *a, const Tensor &weight, std::size_t m, std::size_t n) {
   if (model.dtype == DataType::BF16) {
     gemv_fp32_b_bf16(out, a, weight.as<bf16_t>(), m, n);
   } else if (model.dtype == DataType::F16) {
@@ -50,7 +49,7 @@ void InferenceBackendCPU::_gemv(float *out, const float *a, const Tensor &weight
 }
 
 void InferenceBackendCPU::_gemv_bias(float *out, const float *a, const Tensor &weight, const Tensor &bias,
-                                               std::size_t m, std::size_t n) {
+                                     std::size_t m, std::size_t n) {
   if (model.dtype == DataType::BF16) {
     gemv_bias_fp32_b_bf16(out, a, weight.as<bf16_t>(), bias.as<bf16_t>(), m, n);
   } else if (model.dtype == DataType::F16) {
