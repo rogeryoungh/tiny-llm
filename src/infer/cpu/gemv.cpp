@@ -1,8 +1,6 @@
 #include "../../utils/precision.hpp"
 #include "infer.hpp"
-
-#include <thread>
-#include <vector>
+#include "parallel_for.hpp"
 
 namespace tinyllm {
 
@@ -21,8 +19,7 @@ static void gemv_fp32_naive(float *out, const float *a, const T *b, std::size_t 
 }
 
 template <typename T>
-static void gemv_bias_fp32_naive(float *out, const float *a, const T *b, const T *bias, std::size_t m,
-                                           std::size_t n) {
+static void gemv_bias_fp32_naive(float *out, const float *a, const T *b, const T *bias, std::size_t m, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
     float sum = 0;
     const T *b0 = b + i * m;
@@ -37,45 +34,15 @@ static void gemv_bias_fp32_naive(float *out, const float *a, const T *b, const T
 
 template <typename T>
 static void gemv_fp32_threaded(float *out, const float *a, const T *b, std::size_t m, std::size_t n) {
-  std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
-  if (num_threads == 0)
-    num_threads = 4;
-
-  std::vector<std::thread> threads;
-  std::size_t chunk_size = (n + num_threads - 1) / num_threads;
-
-  for (std::size_t i = 0; i < n; i += chunk_size) {
-    std::size_t end = std::min(i + chunk_size, n);
-    if (i >= end)
-      break;
-    threads.emplace_back(gemv_fp32_naive<T>, out + i, a, b + i * m, m, end - i);
-  }
-
-  for (auto &thread : threads) {
-    thread.join();
-  }
+  parallel_for(0, n, [&](size_t beg, size_t end) { gemv_fp32_naive<T>(out + beg, a, b + beg * m, m, end - beg); });
 }
 
 template <typename T>
 static void gemv_bias_fp32_threaded(float *out, const float *a, const T *b, const T *bias, std::size_t m,
-                                              std::size_t n) {
-  std::uint32_t num_threads = std::max(std::thread::hardware_concurrency() / 2, 1u);
-  if (num_threads == 0)
-    num_threads = 4;
-
-  std::vector<std::thread> threads;
-  std::size_t chunk_size = (n + num_threads - 1) / num_threads;
-
-  for (std::size_t i = 0; i < n; i += chunk_size) {
-    std::size_t end = std::min(i + chunk_size, n);
-    if (i >= end)
-      break;
-    threads.emplace_back(gemv_bias_fp32_naive<T>, out + i, a, b + i * m, bias + i, m, end - i);
-  }
-
-  for (auto &thread : threads) {
-    thread.join();
-  }
+                                    std::size_t n) {
+  parallel_for(0, n, [&](size_t beg, size_t end) {
+    gemv_bias_fp32_naive<T>(out + beg, a, b + beg * m, bias + beg, m, end - beg);
+  });
 }
 
 #ifdef TINYLLM_USE_OPENBLAS
@@ -108,18 +75,17 @@ void gemv_fp32_b_fp16(float *out, const float *a, const fp16_t *b, std::size_t m
 #endif
 }
 
-void gemv_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m,
-                              std::size_t n) {
+void gemv_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m, std::size_t n) {
   gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
 void gemv_bias_fp32_b_bf16(float *out, const float *a, const bf16_t *b, const bf16_t *bias, std::size_t m,
-                                     std::size_t n) {
+                           std::size_t n) {
   gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
 void gemv_bias_fp32_b_fp16(float *out, const float *a, const fp16_t *b, const fp16_t *bias, std::size_t m,
-                                     std::size_t n) {
+                           std::size_t n) {
   gemv_bias_fp32_threaded(out, a, b, bias, m, n);
 }
 
