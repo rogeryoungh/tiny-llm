@@ -1,5 +1,6 @@
 #include "infer.hpp"
 #include "../../utils/precision.hpp"
+#include "parallel_for.hpp"
 #include <cfloat>
 
 namespace tinyllm {
@@ -111,6 +112,34 @@ static void _attention_softmax_fp32(float *xout, const float *qh, const T *kh, c
   }
 }
 
+template <typename T>
+void _mh_attention_fp32(float *out, const float *q, const T *k, const T *v, std::size_t num_heads, std::size_t head_dim,
+                        std::size_t n_kv_heads, std::size_t kv_len) {
+  const std::int32_t q_per_head = num_heads / n_kv_heads;
+  auto attn_f = [&](std::int32_t h) {
+    const float *qh = q + h * head_dim;
+    float *outh = out + h * head_dim;
+    std::int32_t kv_offset = (h / q_per_head) * head_dim;
+    const T *kh = k + kv_offset;
+    const T *vh = v + kv_offset;
+    _attention_softmax_fp32<T>(outh, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+  };
+
+  const std::size_t cost = num_heads * head_dim * kv_len;
+
+  if (cost < 2E5) {
+    for (std::int32_t h = 0; h < num_heads; ++h) {
+      attn_f(h);
+    }
+  } else {
+    parallel_for(0, num_heads, [&](std::size_t beg, std::size_t end) {
+      for (std::int32_t h = beg; h < end; ++h) {
+        attn_f(h);
+      }
+    });
+  }
+}
+
 void attention_softmax_fp32(float *xout, float *atth, const float *qh, const float *kh, const float *vh,
                             std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
   _attention_softmax_fp32(xout, qh, kh, vh, head_dim, n_kv_heads, kv_len);
@@ -124,6 +153,23 @@ void attention_softmax_fp32_kv_bf16(float *xout, float *atth, const float *qh, c
 void attention_softmax_fp32_kv_fp16(float *xout, float *atth, const float *qh, const fp16_t *kh, const fp16_t *vh,
                                     std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
   _attention_softmax_fp32(xout, qh, kh, vh, head_dim, n_kv_heads, kv_len);
+}
+
+void mh_attention_fp32(float *out, float *atth, const float *q, const float *k, const float *v, std::size_t num_heads,
+                       std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len) {
+  _mh_attention_fp32(out, q, k, v, num_heads, head_dim, n_kv_heads, kv_len);
+}
+
+void mh_attention_fp32_kv_bf16(float *out, float *att, const float *q, const bf16_t *k, const bf16_t *v,
+                               std::size_t num_heads, std::size_t head_dim, std::size_t n_kv_heads,
+                               std::size_t kv_len) {
+  _mh_attention_fp32(out, q, k, v, num_heads, head_dim, n_kv_heads, kv_len);
+}
+
+void mh_attention_fp32_kv_fp16(float *out, float *att, const float *q, const fp16_t *k, const fp16_t *v,
+                               std::size_t num_heads, std::size_t head_dim, std::size_t n_kv_heads,
+                               std::size_t kv_len) {
+  _mh_attention_fp32(out, q, k, v, num_heads, head_dim, n_kv_heads, kv_len);
 }
 
 } // namespace tinyllm

@@ -134,25 +134,16 @@ void InferenceBackendCPU::forward_block(const Model::Block &block, Tensor &kc, T
   }
 
   // 3. Attention
-  const std::int32_t q_per_head = config.num_attention_heads / config.num_key_value_heads;
-  for (std::int32_t h = 0; h < config.num_attention_heads; ++h) {
-    float *atth = attn.as<float>() + h * kv_size;
-    const float *qh = q.as<float>() + h * head_dim;
-    float *xb2h = xb2.as<float>() + h * head_dim;
-    std::int32_t kv_offset = (h / q_per_head) * head_dim;
-    if (kv_dtype == DataType::BF16) {
-      const bf16_t *kh = kc.as<bf16_t>() + kv_offset;
-      const bf16_t *vh = vc.as<bf16_t>() + kv_offset;
-      attention_softmax_fp32_kv_bf16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
-    } else if (kv_dtype == DataType::F16) {
-      const fp16_t *kh = kc.as<fp16_t>() + kv_offset;
-      const fp16_t *vh = vc.as<fp16_t>() + kv_offset;
-      attention_softmax_fp32_kv_fp16(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
-    } else {
-      const float *kh = kc.as<float>() + kv_offset;
-      const float *vh = vc.as<float>() + kv_offset;
-      attention_softmax_fp32(xb2h, atth, qh, kh, vh, head_dim, config.num_key_value_heads, kv_len);
-    }
+
+  if (kv_dtype == DataType::BF16) {
+    mh_attention_fp32_kv_bf16(xb2.as<float>(), attn.as<float>(), q.as<float>(), kc.as<bf16_t>(), vc.as<bf16_t>(),
+                              config.num_attention_heads, head_dim, config.num_key_value_heads, kv_len);
+  } else if (kv_dtype == DataType::F16) {
+    mh_attention_fp32_kv_fp16(xb2.as<float>(), attn.as<float>(), q.as<float>(), kc.as<fp16_t>(), vc.as<fp16_t>(),
+                              config.num_attention_heads, head_dim, config.num_key_value_heads, kv_len);
+  } else {
+    mh_attention_fp32(xb2.as<float>(), attn.as<float>(), q.as<float>(), kc.as<float>(), vc.as<float>(),
+                      config.num_attention_heads, head_dim, config.num_key_value_heads, kv_len);
   }
 
   // 4. Combine attention outputs

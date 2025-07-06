@@ -20,18 +20,17 @@ inline float silu_fp32(float x) { return x / (1.0f + std::exp(-x)); }
 
 void gemv_fp32(float *out, const float *a, const float *b, std::size_t m, std::size_t n);
 
-void gemv_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m,
-                              std::size_t n);
+void gemv_bias_fp32(float *out, const float *a, const float *b, const float *bias, std::size_t m, std::size_t n);
 
 void gemv_fp32_b_bf16(float *out, const float *a, const bf16_t *b, std::size_t m, std::size_t n);
 
 void gemv_bias_fp32_b_bf16(float *out, const float *a, const bf16_t *b, const bf16_t *bias, std::size_t m,
-                                     std::size_t n);
+                           std::size_t n);
 
 void gemv_fp32_b_fp16(float *out, const float *a, const fp16_t *b, std::size_t m, std::size_t n);
 
 void gemv_bias_fp32_b_fp16(float *out, const float *a, const fp16_t *b, const fp16_t *bias, std::size_t m,
-                                     std::size_t n);
+                           std::size_t n);
 
 void rope_inplace_fp32(float *x, std::size_t head_dim, std::size_t pos, float theta);
 
@@ -43,5 +42,14 @@ void attention_softmax_fp32_kv_bf16(float *out, float *atth, const float *qh, co
 
 void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, const fp16_t *kh, const fp16_t *vh,
                                     std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
+
+void mh_attention_fp32(float *out, float *atth, const float *q, const float *k, const float *v,
+                       std::size_t num_heads, std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
+
+void mh_attention_fp32_kv_bf16(float *out, float *atth, const float *q, const bf16_t *k, const bf16_t *v,
+                               std::size_t num_heads, std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
+
+void mh_attention_fp32_kv_fp16(float *out, float *atth, const float *q, const fp16_t *k, const fp16_t *v,
+                               std::size_t num_heads, std::size_t head_dim, std::size_t n_kv_heads, std::size_t kv_len);
 
 } // namespace tinyllm
