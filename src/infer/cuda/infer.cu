@@ -245,9 +245,12 @@ __global__ void compute_weighted_sum(float *xout, const float *atth, const half 
   }
 }
 
+template <int THREADS_PER_BLOCK>
 __global__ void mh_compute_raw_scores(float *att, const float *q, const half *k, int head_dim, int n_kv_heads,
                                       int kv_len) {
-  const int col = blockIdx.x;
+  const int lane = threadIdx.x % warpSize;
+  const int wid = threadIdx.x / warpSize;
+  const int col = blockIdx.x * THREADS_PER_BLOCK + wid;
   if (col >= kv_len)
     return;
 
@@ -257,7 +260,6 @@ __global__ void mh_compute_raw_scores(float *att, const float *q, const half *k,
   float *atth = att + head * kv_len;
   const half *kh = k + (head / q_per_head) * head_dim;
 
-  const int lane = threadIdx.x;
   int kv_stride = n_kv_heads * head_dim;
   const half *kh_row = kh + col * kv_stride;
   float sum = 0.0f;
@@ -340,9 +342,12 @@ __global__ void mh_softmax_inplace(float *att, int kv_len) {
   }
 }
 
+template <int THREADS_PER_BLOCK>
 __global__ void mh_compute_weighted_sum(float *out, const float *attn, const half *v, int head_dim, int n_kv_heads,
                                         int kv_len) {
-  const int col = blockIdx.x;
+  const int lane = threadIdx.x % warpSize;
+  const int wid = threadIdx.x / warpSize;
+  const int col = blockIdx.x * THREADS_PER_BLOCK + wid;
   if (col >= head_dim)
     return;
 
@@ -353,7 +358,6 @@ __global__ void mh_compute_weighted_sum(float *out, const float *attn, const hal
 
   const half *vh = v + (head / q_per_head) * head_dim;
 
-  const int lane = threadIdx.x;
   int kv_stride = n_kv_heads * head_dim;
   const half *vh_col = vh + col;
   float sum = 0.0f;
@@ -385,16 +389,16 @@ void attention_softmax_fp32_kv_fp16(float *out, float *atth, const float *qh, co
 
 void mh_attention_fp32_kv_fp16(float *out, float *att, const float *q, const void *k, const void *v, int num_heads,
                                int head_dim, int n_kv_heads, int kv_len) {
-  constexpr int WARP_SIZE = 32;
-  dim3 grid1(kv_len, num_heads);
-  mh_compute_raw_scores<<<grid1, WARP_SIZE>>>(att, q, reinterpret_cast<const half *>(k), head_dim, n_kv_heads, kv_len);
+  constexpr int WARP_SIZE = 32, THREADS_PER_BLOCK = 4;
+  dim3 grid1((kv_len + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, num_heads);
+  mh_compute_raw_scores<THREADS_PER_BLOCK><<<grid1, WARP_SIZE * THREADS_PER_BLOCK>>>(
+      att, q, reinterpret_cast<const half *>(k), head_dim, n_kv_heads, kv_len);
   dim3 grid2(1, num_heads);
-  int block = std::max(32, std::min(bit_ceil(kv_len), 256));
-  mh_softmax_inplace<<<grid2, block>>>(att, kv_len);
+  mh_softmax_inplace<<<grid2, 256>>>(att, kv_len);
 
-  dim3 grid3(head_dim, num_heads);
-  mh_compute_weighted_sum<<<grid3, WARP_SIZE>>>(out, att, reinterpret_cast<const half *>(v), head_dim, n_kv_heads,
-                                                kv_len);
+  dim3 grid3((head_dim + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, num_heads);
+  mh_compute_weighted_sum<THREADS_PER_BLOCK><<<grid3, WARP_SIZE * THREADS_PER_BLOCK>>>(
+      out, att, reinterpret_cast<const half *>(v), head_dim, n_kv_heads, kv_len);
 }
 
 } // namespace tinyllm::cuda
